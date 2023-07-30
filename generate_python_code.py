@@ -121,18 +121,21 @@ def update_inputs(inputs: Dict[str, Any], executed_variables: Dict[str, str]) ->
             inputs[key] = {'variable_name': f"{executed_variables[inputs[key][0]]}[{inputs[key][1]}]"}
     return inputs
 
-def generate_execution_code(load_order: List[Dict[str, Any]]) -> str:
+def generate_execution_code(load_order: List[Dict[str, Any]], filename: str = 'generated_code_workflow.py') -> str:
     """
     Generate the execution code based on the load order.
     
-    This function will organize the necessary imports at the top and ensure the 
-    code is formatted in a readable way.
+    This function will organize the necessary imports at the top, ensure the 
+    code is formatted in a readable way, wrap it into a main function, and 
+    save it as a .py file in the same directory.
     
     Args:
         load_order (List[Dict[str, Any]]): A list of dictionaries representing the
             load order. Each dictionary should contain keys 'inputs', 'class_type', and
             optionally other keys with corresponding values.
-            
+        filename (str, optional): The name of the Python file to which the code should be saved.
+            Defaults to 'generated_code.py'.
+
     Returns:
         str: Generated execution code as a string.
     """
@@ -157,14 +160,18 @@ def generate_execution_code(load_order: List[Dict[str, Any]]) -> str:
     # Convert the import statements into code
     imports_code = [f"from nodes import {class_name}" for class_name in import_statements]
     
-    # Combine import statements and code
-    full_code = '\n'.join(imports_code + [''] + code)  # separate imports and code by a newline
+    # Combine import statements and code, and wrap them in a main function
+    main_function_code = f"def main():\n\t" + '\n\t'.join(code)
+    full_code = '\n'.join(['import sys\nsys.path.append("../")'] + imports_code + ['', main_function_code, '', 'if __name__ == "__main__":', '\tmain()'])
+    
+    # Save the code to a .py file
+    with open(filename, 'w') as file:
+        file.write(full_code)
+        
     return full_code
-
 
 
 prompt = read_json_file('workflow_api.json')
 load_order = determine_load_order(prompt)
-print(load_order)
 code = generate_execution_code(load_order)
 print(code)
