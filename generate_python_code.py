@@ -1,8 +1,6 @@
 import sys
 import json
 from typing import Dict, List, Union, Tuple, Any
-import pprint
-import random
 
 sys.path.append('../')
 # from execution import PromptExecutor
@@ -76,7 +74,7 @@ def determine_load_order(data: Dict[str, Dict[str, Union[Dict[str, Union[int, Li
 
 def generate_code(obj: object, func: str, variable_name: str, **kwargs) -> str:
     """
-    This function generates python code for a function call.
+    This function generates Python code for a function call.
 
     Args:
         obj (object): The object whose method is to be called.
@@ -85,24 +83,28 @@ def generate_code(obj: object, func: str, variable_name: str, **kwargs) -> str:
         **kwargs: The keyword arguments for the function.
 
     Returns:
-        str: The generated python code.
+        str: The generated Python code.
     """
     # Get the class name of the object
     obj_name = obj.__class__.__name__
 
     # Convert the function arguments into a string
     # If the value is a string, it is surrounded by quotes
-    # If the value is a dictionary and has key 'variable_name', its value is used as the arg value without quotes
+    # If the value is a dictionary and has key 'variable_name', its value is used as the arg value
+    # For images argument and obj_name has 'SaveImage', '.detach' is appended at the end
     args = ', '.join(
         f'{key}="{value}"' if isinstance(value, str)
+        else f'{key}={value["variable_name"]}.detach()' if key == 'images' and "SaveImage" in obj_name and isinstance(value, dict) and 'variable_name' in value
         else f'{key}={value["variable_name"]}' if isinstance(value, dict) and 'variable_name' in value
         else f'{key}={value}' for key, value in kwargs.items()
     )
 
     # Generate the Python code
-    code = f'{variable_name} = {obj_name}.{func}({args})'
+    code = f'{variable_name} = {obj_name}().{func}({args})'
 
     return code
+
+
 
 
 def update_inputs(inputs: Dict[str, Any], executed_variables: Dict[str, str]) -> Dict[str, Any]:
@@ -171,7 +173,8 @@ def generate_execution_code(load_order: List[Dict[str, Any]], filename: str = 'g
     return full_code
 
 
-prompt = read_json_file('workflow_api.json')
-load_order = determine_load_order(prompt)
-code = generate_execution_code(load_order)
-print(code)
+if __name__ == '__main__':
+    prompt = read_json_file('workflow_api.json')
+    load_order = determine_load_order(prompt)
+    code = generate_execution_code(load_order)
+    print(code)
