@@ -1,10 +1,15 @@
-import sys
+import glob
 import json
+import logging
+import os
 from typing import Dict, List, Any
+import sys
 
 sys.path.append('../')
-# from execution import PromptExecutor
+
 from nodes import NODE_CLASS_MAPPINGS
+
+logging.basicConfig(level=logging.INFO)
 
 
 def read_json_file(file_path: str) -> dict:
@@ -16,13 +21,34 @@ def read_json_file(file_path: str) -> dict:
 
     Returns:
         dict: The contents of the JSON file as a dictionary.
+
+    Raises:
+        FileNotFoundError: If the file is not found, it lists all JSON files in the directory of the file path.
+        ValueError: If the file is not a valid JSON.
     """
+
     try:
         with open(file_path, 'r') as file:
             data = json.load(file)
         return data
+
     except FileNotFoundError:
-        raise FileNotFoundError(f"File not found: {file_path}")
+        # Get the directory from the file_path
+        directory = os.path.dirname(file_path)
+
+        # If the directory is an empty string (which means file is in the current directory),
+        # get the current working directory
+        if not directory:
+            directory = os.getcwd()
+
+        # Find all JSON files in the directory
+        json_files = glob.glob(f"{directory}/*.json")
+
+        # Format the list of JSON files as a string
+        json_files_str = "\n".join(json_files)
+
+        raise FileNotFoundError(f"\n\nFile not found: {file_path}. JSON files in the directory:\n{json_files_str}")
+
     except json.JSONDecodeError:
         raise ValueError(f"Invalid JSON format in file: {file_path}")
     
@@ -243,7 +269,9 @@ def generate_workflow(load_order: List, filename: str = 'generated_code_workflow
 
 
 if __name__ == '__main__':
-    prompt = read_json_file('workflow_api.json')
+    input_file = 'workflow_api_inpainting.json'
+    prompt = read_json_file(input_file)
     load_order = determine_load_order(prompt)
-    code = generate_workflow(load_order)
-    print(code)
+    output_file = input_file.replace('.json', '.py')
+    code = generate_workflow(load_order, filename=output_file)
+    logging.info(code)
