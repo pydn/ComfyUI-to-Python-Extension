@@ -1,3 +1,4 @@
+import argparse
 import glob
 import json
 import logging
@@ -268,10 +269,26 @@ def generate_workflow(load_order: List, filename: str = 'generated_code_workflow
     return final_code
 
 
-if __name__ == '__main__':
-    input_file = 'workflow_api_inpainting.json'
-    prompt = read_json_file(input_file)
+def main():
+    """
+    Main function to be executed.
+    """
+    # Create argument parser
+    parser = argparse.ArgumentParser(description='Process workflow API JSON.')
+
+    # Add argument for input file
+    parser.add_argument('--input', default='workflow_api.json', type=str, help='Input file name.')
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # Load JSON data from the input file
+    prompt = read_json_file(args.input)
     load_order = determine_load_order(prompt)
-    output_file = input_file.replace('.json', '.py')
+    output_file = args.input.replace('.json', '.py')
     code = generate_workflow(load_order, filename=output_file)
     logging.info(code)
+
+
+if __name__ == '__main__':
+    main()
