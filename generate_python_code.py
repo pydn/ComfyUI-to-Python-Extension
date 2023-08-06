@@ -1,9 +1,9 @@
-import argparse
 import glob
+import inspect
 import json
 import logging
 import os
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Callable
 import sys
 
 sys.path.append('../')
@@ -66,13 +66,18 @@ def determine_load_order(data: Dict) -> List:
 
     Returns:
         List: 
-            A list of tuples where each tuple contains a key and its corresponding dictionary, ordered by load order.
+            A list of tuples where each tuple contains a key, its corresponding dictionary, 
+            and a boolean indicating whether or not the function is dependent on the output of
+            a previous function, ordered by load order.
     """
 
     # Create a dictionary to keep track of visited nodes.
     visited = {}
-    # Create a list to store the load order.
+    # Create a list to store the load order for functions
     load_order = []
+    # Boolean to indicate whether or not the class is a loader class that should not be
+    # reloaded during every loop
+    is_loader = False
 
     def dfs(key: str) -> None:
         """
@@ -96,16 +101,18 @@ def determine_load_order(data: Dict) -> List:
                 dfs(val[0])  
 
         # Add the key and its corresponding data to the load order list.
-        load_order.append((key, data[key]))  
+        load_order.append((key, data[key], is_loader))  
 
-    # Loop over each key in the data.
+    # Load Loader keys first
     for key in data:
-        # Check if the key has dependencies
-        if not any(isinstance(val, list) for val in data[key]['inputs'].values()):
-            # Add keys with no dependencies to load order and mark as visited
-            load_order.append((key, data[key]))
+        class_def = NODE_CLASS_MAPPINGS[data[key]['class_type']]()
+        if class_def.CATEGORY == 'loaders' or class_def.FUNCTION == 'load_image':
+            is_loader = True
+            load_order.append((key, data[key], is_loader))
             visited[key] = True
 
+    # Reset is_loader bool
+    is_loader = False
     # Loop over each key in the data.
     for key in data:
         # If the key has not been visited, perform a DFS from that key.
@@ -115,7 +122,7 @@ def determine_load_order(data: Dict) -> List:
     return load_order
 
 
-def create_function_call_code(obj_name: str, func: str, variable_name: str, **kwargs) -> str:
+def create_function_call_code(obj_name: str, func: str, variable_name: str, is_loader: bool, **kwargs) -> str:
     """
     This function generates Python code for a function call.
 
@@ -123,38 +130,47 @@ def create_function_call_code(obj_name: str, func: str, variable_name: str, **kw
         obj_name (str): The name of the initialized object.
         func (str): The function to be called.
         variable_name (str): The name of the variable that the function result should be assigned to.
+        is_loader (bool): Determines the code indentation.
         **kwargs: The keyword arguments for the function.
 
     Returns:
         str: The generated Python code.
     """
-    # Convert the function arguments into a string
-    # If the value is a string, it is surrounded by quotes
-    # If the value is a dictionary and has key 'variable_name', its value is used as the arg value
-    # For images argument and obj_name has 'SaveImage', '.detach' is appended at the end
-    args = ', '.join(
-        f'{key}="{value}"' if isinstance(value, str)
-        else f'{key}={value["variable_name"]}.detach()' if key == 'images' and "saveimage" in obj_name and isinstance(value, dict) and 'variable_name' in value
-        else f'{key}={value["variable_name"]}' if isinstance(value, dict) and 'variable_name' in value
-        else f'{key}={value}' for key, value in kwargs.items()
-    )
+
+    def format_arg(key: str, value: any) -> str:
+        """Formats arguments based on key and value."""
+        if isinstance(value, str):
+            value = value.replace("\n", "\\n")
+            return f'{key}="{value}"'
+        if key == 'images' and "saveimage" in obj_name and isinstance(value, dict) and 'variable_name' in value:
+            return f'{key}={value["variable_name"]}.detach()'
+        if isinstance(value, dict) and 'variable_name' in value:
+            return f'{key}={value["variable_name"]}'
+        return f'{key}={value}'
+
+    args = ', '.join(format_arg(key, value) for key, value in kwargs.items())
 
     # Generate the Python code
     code = f'{variable_name} = {obj_name}.{func}({args})'
 
+    # If the code contains dependencies, indent the code because it will be placed inside
+    # of a for loop
+    if not is_loader:
+        code = f'\t{code}'
+
     return code
 
 
-def update_inputs(inputs: Dict[str, Any], executed_variables: Dict[str, str]) -> Dict[str, Any]:
+def update_inputs(inputs: Dict, executed_variables: Dict) -> Dict:
     """
     Update inputs based on the executed variables.
 
     Args:
-        inputs (Dict[str, Any]): Inputs dictionary to update.
-        executed_variables (Dict[str, str]): Dictionary storing executed variable names.
+        inputs (Dict): Inputs dictionary to update.
+        executed_variables (Dict): Dictionary storing executed variable names.
 
     Returns:
-        Dict[str, Any]: Updated inputs dictionary.
+        Dict: Updated inputs dictionary.
     """
     for key in inputs.keys():
         if isinstance(inputs[key], list) and inputs[key][0] in executed_variables.keys():
@@ -184,7 +200,7 @@ def get_class_info(class_type: str) -> (str, str, str):
     return class_type, import_statement, class_code
 
 
-def assemble_python_code(import_statements: set, code: List[str]) -> str:
+def assemble_python_code(import_statements: set, loader_code: List[str], code: List[str], query_size: int) -> str:
     """
     Generates final code string.
 
@@ -196,7 +212,7 @@ def assemble_python_code(import_statements: set, code: List[str]) -> str:
         final_code (str): Generated final code as a string
     """
     imports_code = [f"from nodes import {class_name}" for class_name in import_statements]
-    main_function_code = f"def main():\n\t" + '\n\t'.join(code)
+    main_function_code = f"def main():\n\t" + '\n\t'.join(loader_code) + f'\n\tfor q in {range(1, query_size)}:\n\t' + '\n\t'.join(code)
     final_code = '\n'.join(['import sys\nsys.path.append("../")'] + imports_code + ['', main_function_code, '', 'if __name__ == "__main__":', '\tmain()'])
 
     return final_code
@@ -223,7 +239,22 @@ def write_code_to_file(filename: str, code: str) -> None:
         file.write(code)
 
 
-def generate_workflow(load_order: List, filename: str = 'generated_code_workflow.py') -> str:
+def get_function_parameters(func: Callable[..., Any]) -> List:
+    """Get the names  of a function's parameters.
+
+    Args:
+        func (Callable[..., Any]): The function whose parameters we want to inspect.
+
+    Returns:
+        List: A dictionary containing the names  of the function's parameters.
+    """
+    signature = inspect.signature(func)
+    parameters = {name: param.default if param.default != param.empty else None
+                  for name, param in signature.parameters.items()}
+    return list(parameters.keys())
+
+
+def generate_workflow(load_order: List, filename: str = 'generated_code_workflow.py', query_size: int = 10) -> str:
     """
     Generate the execution code based on the load order.
 
@@ -237,12 +268,12 @@ def generate_workflow(load_order: List, filename: str = 'generated_code_workflow
     """
 
     # Create the necessary data structures to hold imports and generated code
-    import_statements, executed_variables, code = set(), {}, []
+    import_statements, executed_variables, loader_code, code = set(), {}, [], []
     # This dictionary will store the names of the objects that we have already initialized
     initialized_objects = {}
 
     # Loop over each dictionary in the load order list
-    for idx, data in load_order:
+    for idx, data, is_loader in load_order:
 
         # Generate class definition and inputs from the data
         inputs, class_type = data['inputs'], data['class_type']
@@ -253,15 +284,25 @@ def generate_workflow(load_order: List, filename: str = 'generated_code_workflow
             class_type, import_statement, class_code = get_class_info(class_type)
             initialized_objects[class_type] = class_type.lower()
             import_statements.add(import_statement)
-            code.append(class_code)
+            loader_code.append(class_code)
+
+        # Get all possible parameters for class_def
+        class_def_params = get_function_parameters(getattr(class_def, class_def.FUNCTION))
+
+        # Remove any keyword arguments from **inputs if they are not in class_def_params
+        inputs = {key: value for key, value in inputs.items() if key in class_def_params}
 
         # Create executed variable and generate code
         executed_variables[idx] = f'{class_type.lower()}_{idx}'
         inputs = update_inputs(inputs, executed_variables)
-        code.append(create_function_call_code(initialized_objects[class_type], class_def.FUNCTION, executed_variables[idx], **inputs))
+
+        if is_loader:
+            loader_code.append(create_function_call_code(initialized_objects[class_type], class_def.FUNCTION, executed_variables[idx], is_loader, **inputs))
+        else:
+            code.append(create_function_call_code(initialized_objects[class_type], class_def.FUNCTION, executed_variables[idx], is_loader, **inputs))
 
     # Generate final code by combining imports and code, and wrap them in a main function
-    final_code = assemble_python_code(import_statements, code)
+    final_code = assemble_python_code(import_statements, loader_code, code, query_size)
 
     # Save the code to a .py file
     write_code_to_file(filename, final_code)
@@ -269,26 +310,19 @@ def generate_workflow(load_order: List, filename: str = 'generated_code_workflow
     return final_code
 
 
-def main():
+def main(input, query_size=10):
     """
     Main function to be executed.
     """
-    # Create argument parser
-    parser = argparse.ArgumentParser(description='Process workflow API JSON.')
-
-    # Add argument for input file
-    parser.add_argument('--input', default='workflow_api.json', type=str, help='Input file name.')
-
-    # Parse arguments
-    args = parser.parse_args()
-
     # Load JSON data from the input file
-    prompt = read_json_file(args.input)
+    prompt = read_json_file(input)
     load_order = determine_load_order(prompt)
-    output_file = args.input.replace('.json', '.py')
+    output_file = input.replace('.json', '.py')
     code = generate_workflow(load_order, filename=output_file)
     logging.info(code)
 
 
 if __name__ == '__main__':
-    main()
+    input = 'workflow_api.json'
+    query_size = 10
+    main(input, query_size)
