@@ -3,6 +3,7 @@ import inspect
 import json
 import logging
 import os
+import random
 from typing import Dict, List, Any, Callable
 import sys
 
@@ -106,10 +107,11 @@ def determine_load_order(data: Dict) -> List:
     # Load Loader keys first
     for key in data:
         class_def = NODE_CLASS_MAPPINGS[data[key]['class_type']]()
-        if class_def.CATEGORY == 'loaders' or class_def.FUNCTION == 'load_image':
+        if class_def.CATEGORY == 'loaders' or class_def.FUNCTION in ['encode'] or not any(isinstance(val, list) for val in data[key]['inputs'].values()):
             is_loader = True
-            load_order.append((key, data[key], is_loader))
-            visited[key] = True
+            # If the key has not been visited, perform a DFS from that key.
+            if key not in visited:
+                dfs(key)
 
     # Reset is_loader bool
     is_loader = False
@@ -139,12 +141,14 @@ def create_function_call_code(obj_name: str, func: str, variable_name: str, is_l
 
     def format_arg(key: str, value: any) -> str:
         """Formats arguments based on key and value."""
-        if isinstance(value, str):
+        if key == 'noise_seed':
+            return f'{key}=random.randint(1, 2**64)'
+        elif isinstance(value, str):
             value = value.replace("\n", "\\n")
             return f'{key}="{value}"'
-        if key == 'images' and "saveimage" in obj_name and isinstance(value, dict) and 'variable_name' in value:
+        elif key == 'images' and "saveimage" in obj_name and isinstance(value, dict) and 'variable_name' in value:
             return f'{key}={value["variable_name"]}.detach()'
-        if isinstance(value, dict) and 'variable_name' in value:
+        elif isinstance(value, dict) and 'variable_name' in value:
             return f'{key}={value["variable_name"]}'
         return f'{key}={value}'
 
@@ -271,7 +275,8 @@ def generate_workflow(load_order: List, filename: str = 'generated_code_workflow
     import_statements, executed_variables, loader_code, code = set(), {}, [], []
     # This dictionary will store the names of the objects that we have already initialized
     initialized_objects = {}
-
+    # Add random import
+    import_statements.add('random')
     # Loop over each dictionary in the load order list
     for idx, data, is_loader in load_order:
 
