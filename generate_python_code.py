@@ -104,7 +104,7 @@ def determine_load_order(data: Dict) -> List:
         # Add the key and its corresponding data to the load order list.
         load_order.append((key, data[key], is_loader))  
 
-    # Load Loader keys first
+    # Load Loader, encoder, and keys without dependenciesfirst
     for key in data:
         class_def = NODE_CLASS_MAPPINGS[data[key]['class_type']]()
         if class_def.CATEGORY == 'loaders' or class_def.FUNCTION in ['encode'] or not any(isinstance(val, list) for val in data[key]['inputs'].values()):
