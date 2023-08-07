@@ -62,7 +62,7 @@ def main():
     vaedecodetiled = VAEDecodeTiled()
     saveimage = SaveImage()
 
-    for q in range(1, 10):
+    for q in range(10):
         ksampleradvanced_10 = ksampleradvanced.sample(
             add_noise="enable",
             noise_seed=random.randint(1, 2**64),
