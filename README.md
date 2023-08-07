@@ -1,4 +1,4 @@
-## Overview
+## ComfyUI-to-Python-Extension
 
 The `ComfyUI-to-Python-Extension` is a powerful tool that translates the ComfyUI workflow into executable Python code. Designed to bridge the gap between ComfyUI's visual interface and Python's programming environment, this script facilitates the seamless transition from design to code execution. Whether you're a data scientist, a software developer, or an AI enthusiast, this tool streamlines the process of implementing ComfyUI workflows in Python. The output makes it easy to queue a large amount of images for generation and provides a base script to easily modify for experimination.
 
