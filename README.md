@@ -110,19 +110,15 @@ if __name__ == "__main__":
 
 ## Usage
 
-1. **Clone this repo**
+
+1. Navigate to your `ComfyUI` directory
+
+2. Clone this repo
     ```bash
     git clone https://github.com/pydn/ComfyUI-to-Python-Extension.git
     ```
 
-2. **Install requirements**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3. **Copy files into ComfyUI**: Copy [`ComfyUI-to-Python-Extension/`](https://github.com/pydn/ComfyUI-to-Python-Extension/tree/main/ComfyUI-to-Python-Extension) into the parent folder of your cloned version of ComfyUI. 
-
-    After copying `ComfyUI-to-Python-Extension/` your local `ComfyUI` directory should look like this:
+    After cloning the repo, your `ComfyUI` directory should look like this:
     ```
     /comfy
     /comfy_extras
@@ -148,10 +144,26 @@ if __name__ == "__main__":
     server.py
     ```
 
-4. **Navigate to the `ComfyUI-to-Python-Extension` folder in your local `ComfyUI` directory.**
+3. Navigate to the `ComfyUI-to-Python-Extension` folder and install requirements
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-5. **Run the Script**: Use the following command to run the script with a specific JSON file:
+4. Launch ComfyUI, click the gear icon over `Queue Prompt`, then check `Enable Dev mode Options`. **THE SCRIPT WILL NOT WORK IF YOU DO NOT ENABLE THIS OPTION!**
 
+![Enable Dev Mode Options](images/dev_mode_options.jpg)
+
+5. Load up your favorite workflows, then click the newly enabled `Save (API Format)` button under Queue Prompt
+
+6. Move the downloaded .json workflow file to your `ComfyUI/ComfyUI-to-Python-Extension` folder
+
+7. If needed, update the `input` variable at the bottom of `comfyui_to_python.py` to match the name of your .json workflow file. By default, the script will look for a file called `workflow_api.json`. You can also update the `queue_size` variable to your desired number of images that you want to generate in a single script execution. By default, the scripts will generate 10 images.
+
+8. Run the script:
    ```bash
-   python generate_python_code.py
+   python comfyui_to_python.py
    ```
+
+9. After truning the `comfyui_to_python.py` a new .py file will be created in the current working directory that contains the same name as the `input` variable. If you made no changes, look for `workflow_api.py`.
+
+10. Now you can execute the newly created .py file to generate images without launching a server.
