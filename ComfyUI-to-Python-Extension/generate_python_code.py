@@ -10,6 +10,8 @@ sys.path.append('../')
 
 from nodes import NODE_CLASS_MAPPINGS
 
+import black
+
 logging.basicConfig(level=logging.INFO)
 
 
@@ -154,7 +156,7 @@ def create_function_call_code(obj_name: str, func: str, variable_name: str, is_l
     args = ', '.join(format_arg(key, value) for key, value in kwargs.items())
 
     # Generate the Python code
-    code = f'{variable_name} = {obj_name}.{func}({args})'
+    code = f'{variable_name} = {obj_name}.{func}({args})\n'
 
     # If the code contains dependencies, indent the code because it will be placed inside
     # of a for loop
@@ -217,8 +219,10 @@ def assemble_python_code(import_statements: set, loader_code: List[str], code: L
     """
     static_imports = ['import random']
     imports_code = [f"from nodes import {class_name}" for class_name in import_statements]
-    main_function_code = f"def main():\n\t" + '\n\t'.join(loader_code) + f'\n\tfor q in {range(1, queue_size)}:\n\t' + '\n\t'.join(code)
+    main_function_code = f"def main():\n\t" + '\n\t'.join(loader_code) + f'\n\n\tfor q in {range(1, queue_size)}:\n\t' + '\n\t'.join(code)
     final_code = '\n'.join(static_imports + ['import sys\nsys.path.append("../")'] + imports_code + ['', main_function_code, '', 'if __name__ == "__main__":', '\tmain()'])
+    final_code = black.format_str(final_code, mode=black.Mode())
+
 
     return final_code
 
