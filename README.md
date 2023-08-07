@@ -164,6 +164,6 @@ if __name__ == "__main__":
    python comfyui_to_python.py
    ```
 
-9. After truning the `comfyui_to_python.py` a new .py file will be created in the current working directory that contains the same name as the `input` variable. If you made no changes, look for `workflow_api.py`.
+9. After running `comfyui_to_python.py`, a new .py file will be created in the current working directory that contains the same name as the `input` variable. If you made no changes, look for `workflow_api.py`.
 
 10. Now you can execute the newly created .py file to generate images without launching a server.
