@@ -1,6 +1,6 @@
 ## Overview
 
-The `ComfyUI-to-Python-Extension` is a powerful tool that translates ComfyUI workflow into executable Python code. Designed to bridge the gap between ComfyUI's visual interface and Python's programming environment, this script facilitates the seamless transition from design to code execution. Whether you're a data scientist, a software developer, or an AI enthusiast, this tool streamlines the process of implementing ComfyUI workflows in Python. The output makes it easy to queue a large amount of images for generation and provides a base script to easily modify for experimination.
+The `ComfyUI-to-Python-Extension` is a powerful tool that translates the ComfyUI workflow into executable Python code. Designed to bridge the gap between ComfyUI's visual interface and Python's programming environment, this script facilitates the seamless transition from design to code execution. Whether you're a data scientist, a software developer, or an AI enthusiast, this tool streamlines the process of implementing ComfyUI workflows in Python. The output makes it easy to queue a large amount of images for generation and provides a base script to easily modify for experimination.
 
 **Convert this:**
 
@@ -14,12 +14,14 @@ import random
 import sys
 
 sys.path.append("../")
-from nodes import KSamplerAdvanced
-from nodes import EmptyLatentImage
-from nodes import VAEDecodeTiled
-from nodes import SaveImage
-from nodes import CheckpointLoaderSimple
-from nodes import CLIPTextEncode
+from nodes import (
+    KSamplerAdvanced,
+    EmptyLatentImage,
+    VAEDecodeTiled,
+    SaveImage,
+    CLIPTextEncode,
+    CheckpointLoaderSimple,
+)
 
 
 def main():
