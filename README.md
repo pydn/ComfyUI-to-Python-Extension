@@ -102,7 +102,7 @@ def main():
             )
 
             saveimage_19 = saveimage.save_images(
-                filename_prefix="ComfyUI", images=vaedecode_17[0].detach()
+                filename_prefix="ComfyUI", images=vaedecode_17[0]
             )
 
 
