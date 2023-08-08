@@ -149,8 +149,6 @@ def create_function_call_code(obj_name: str, func: str, variable_name: str, is_l
         elif isinstance(value, str):
             value = value.replace("\n", "\\n")
             return f'{key}="{value}"'
-        elif key == 'images' and "saveimage" in obj_name and isinstance(value, dict) and 'variable_name' in value:
-            return f'{key}={value["variable_name"]}.detach()'
         elif isinstance(value, dict) and 'variable_name' in value:
             return f'{key}={value["variable_name"]}'
         return f'{key}={value}'
