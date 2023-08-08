@@ -215,12 +215,11 @@ def assemble_python_code(import_statements: set, loader_code: List[str], code: L
     Returns:
         final_code (str): Generated final code as a string
     """
-    static_imports = ['import random']
+    static_imports = ['import random', 'import torch']
     imports_code = [f"from nodes import {', '.join([class_name for class_name in import_statements])}" ]
-    main_function_code = f"def main():\n\t" + 'with torch.inference_mode():\n\t' + '\n\t'.join(loader_code) + f'\n\n\tfor q in range({queue_size}):\n\t' + '\n\t'.join(code)
+    main_function_code = f"def main():\n\t" + 'with torch.inference_mode():\n\t\t' + '\n\t\t'.join(loader_code) + f'\n\n\t\tfor q in range({queue_size}):\n\t\t' + '\n\t\t'.join(code)
     final_code = '\n'.join(static_imports + ['import sys\nsys.path.append("../")'] + imports_code + ['', main_function_code, '', 'if __name__ == "__main__":', '\tmain()'])
     final_code = black.format_str(final_code, mode=black.Mode())
-
 
     return final_code
 
