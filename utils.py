@@ -9,68 +9,6 @@ sys.path.append('../')
 
 import execution
 from nodes import init_custom_nodes
-
-
-def read_json_file(file_path: str) -> dict:
-    """
-    Reads a JSON file and returns its contents as a dictionary.
-
-    Args:
-        file_path (str): The path to the JSON file.
-
-    Returns:
-        dict: The contents of the JSON file as a dictionary.
-
-    Raises:
-        FileNotFoundError: If the file is not found, it lists all JSON files in the directory of the file path.
-        ValueError: If the file is not a valid JSON.
-    """
-
-    try:
-        with open(file_path, 'r') as file:
-            data = json.load(file)
-        return data
-
-    except FileNotFoundError:
-        # Get the directory from the file_path
-        directory = os.path.dirname(file_path)
-
-        # If the directory is an empty string (which means file is in the current directory),
-        # get the current working directory
-        if not directory:
-            directory = os.getcwd()
-
-        # Find all JSON files in the directory
-        json_files = glob.glob(f"{directory}/*.json")
-
-        # Format the list of JSON files as a string
-        json_files_str = "\n".join(json_files)
-
-        raise FileNotFoundError(f"\n\nFile not found: {file_path}. JSON files in the directory:\n{json_files_str}")
-
-    except json.JSONDecodeError:
-        raise ValueError(f"Invalid JSON format in file: {file_path}")
-
-
-def write_code_to_file(filename: str, code: str) -> None:
-    """
-    Writes given code to a .py file. If the directory does not exist, it creates it.
-
-    Args:
-        filename (str): The name of the Python file to save the code to.
-        code (str): The code to save.
-    """
-
-    # Extract directory from the filename
-    directory = os.path.dirname(filename)
-
-    # If the directory does not exist, create it
-    if directory and not os.path.exists(directory):
-        os.makedirs(directory)
-
-    # Save the code to a .py file
-    with open(filename, 'w') as file:
-        file.write(code)
         
 
 def import_custom_nodes() -> None:
@@ -120,10 +58,6 @@ def add_comfyui_directories_to_sys_path() -> None:
 
     # Start the search from the current working directory
     search_directory(start_path)
-
-# Example usage
-add_comfyui_directories_to_sys_path()
-
 
 
 def get_value_at_index(obj: Union[Sequence, Mapping], index: int) -> Any:
