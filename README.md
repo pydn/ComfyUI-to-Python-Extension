@@ -110,6 +110,11 @@ if __name__ == "__main__":
     main()
 ```
 
+## V1.0.0 Release Notes
+- **Use all the custom nodes!**
+    - Custom nodes are now supported. If you run into any issues with code execution, first ensure that the each node works as expected in the GUI. If it works in the GUI, but not in the generated script, please submit an issue.
+
+
 ## Usage
 
 
