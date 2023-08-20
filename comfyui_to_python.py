@@ -4,6 +4,7 @@ import inspect
 import json
 import logging
 import os
+import random
 import sys
 
 import black
@@ -230,6 +231,9 @@ class CodeGenerator:
 
             # Remove any keyword arguments from **inputs if they are not in class_def_params
             inputs = {key: value for key, value in inputs.items() if key in class_def_params}
+            # Deal with hidden variables
+            if 'unique_id' in class_def_params:
+                inputs['unique_id'] = random.randint(1, 2**64)
 
             # Create executed variable and generate code
             executed_variables[idx] = f'{class_type.lower().strip()}_{idx}'
@@ -429,8 +433,8 @@ class ComfyUItoPython:
 
 if __name__ == '__main__':
     # Update class parameters here
-    input_file = 'workflow_api_serge.json'
-    output_file = 'workflow_api_serge.py'
+    input_file = 'workflow_api_impact3.json'
+    output_file = 'workflow_api_impact3.py'
     queue_size = 10
 
     # Convert ComfyUI workflow to Python
