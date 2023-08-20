@@ -433,8 +433,8 @@ class ComfyUItoPython:
 
 if __name__ == '__main__':
     # Update class parameters here
-    input_file = 'workflow_api_impact3.json'
-    output_file = 'workflow_api_impact3.py'
+    input_file = 'workflow_api.json'
+    output_file = 'workflow_api.py'
     queue_size = 10
 
     # Convert ComfyUI workflow to Python
