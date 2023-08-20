@@ -6,13 +6,11 @@ import logging
 import os
 import random
 import sys
+from typing import Dict, List, Any, Callable, Tuple
 
 import black
 
-from typing import Dict, List, Any, Callable, Tuple
-
 from utils import import_custom_nodes, add_comfyui_directory_to_sys_path, get_value_at_index
-
 
 sys.path.append('../')
 
