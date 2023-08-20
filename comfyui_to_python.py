@@ -10,7 +10,7 @@ import black
 
 from typing import Dict, List, Any, Callable, Tuple
 
-from utils import import_custom_nodes, add_comfyui_directories_to_sys_path
+from utils import import_custom_nodes, add_comfyui_directory_to_sys_path, get_value_at_index
 
 
 sys.path.append('../')
@@ -218,7 +218,7 @@ class CodeGenerator:
                     continue
 
                 class_type, import_statement, class_code = self.get_class_info(class_type)
-                initialized_objects[class_type] = class_type.lower()
+                initialized_objects[class_type] = class_type.lower().strip()
                 if class_type in self.base_node_class_mappings.keys():
                     import_statements.add(import_statement)
                 if class_type not in self.base_node_class_mappings.keys():
@@ -232,7 +232,7 @@ class CodeGenerator:
             inputs = {key: value for key, value in inputs.items() if key in class_def_params}
 
             # Create executed variable and generate code
-            executed_variables[idx] = f'{class_type.lower()}_{idx}'
+            executed_variables[idx] = f'{class_type.lower().strip()}_{idx}'
             inputs = self.update_inputs(inputs, executed_variables)
 
             if is_special_function:
@@ -302,14 +302,16 @@ class CodeGenerator:
         Returns:
             str: Generated final code as a string.
         """
-        # Get the source code of the function as a string
-        add_comfyui_directories_to_sys_path_code = inspect.getsource(add_comfyui_directories_to_sys_path)
+        # Get the source code of the utils functions as a string
+        func_strings = []
+        for func in [add_comfyui_directory_to_sys_path, get_value_at_index]:
+            func_strings.append(f'\n{inspect.getsource(func)}')
         # Define static import statements required for the script
-        static_imports = ['import os', 'import random', 'import sys', 'import torch', f'\n{add_comfyui_directories_to_sys_path_code}', 
-                        '\n\nadd_comfyui_directories_to_sys_path()']
+        static_imports = ['import os', 'import random', 'import sys', 'from typing import Sequence, Mapping, Any, Union', 
+                          'import torch'] + func_strings + ['\n\nadd_comfyui_directory_to_sys_path()']
         # Check if custom nodes should be included
         if custom_nodes:
-            static_imports.append('\nfrom utils import import_custom_nodes, get_value_at_index\n')
+            static_imports.append(f'\n{inspect.getsource(import_custom_nodes)}\n')
             custom_nodes = 'import_custom_nodes()\n\t'
         else:
             custom_nodes = ''
@@ -336,9 +338,9 @@ class CodeGenerator:
         """
         import_statement = class_type
         if class_type in self.base_node_class_mappings.keys():
-            class_code = f'{class_type.lower()} = {class_type}()'
+            class_code = f'{class_type.lower().strip()} = {class_type.strip()}()'
         else:
-            class_code = f'{class_type.lower()} = NODE_CLASS_MAPPINGS["{class_type}"]()'
+            class_code = f'{class_type.lower().strip()} = NODE_CLASS_MAPPINGS["{class_type}"]()'
 
         return class_type, import_statement, class_code
 

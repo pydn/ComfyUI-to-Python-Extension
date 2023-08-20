@@ -1,15 +1,9 @@
-import asyncio
-import json
-import glob
 import os
 from typing import Sequence, Mapping, Any, Union
 import sys
 
 sys.path.append('../')
 
-import execution
-from nodes import init_custom_nodes
-        
 
 def import_custom_nodes() -> None:
     """Find all custom nodes in the custom_nodes folder and add those node objects to NODE_CLASS_MAPPINGS
@@ -17,6 +11,9 @@ def import_custom_nodes() -> None:
     This function sets up a new asyncio event loop, initializes the PromptServer,
     creates a PromptQueue, and initializes the custom nodes.
     """
+    import asyncio
+    import execution
+    from nodes import init_custom_nodes
     import server
 
     # Creating a new event loop and setting it as the default loop
@@ -30,21 +27,19 @@ def import_custom_nodes() -> None:
     # Initializing custom nodes
     init_custom_nodes()
 
-
-def add_comfyui_directories_to_sys_path() -> None:
+def add_comfyui_directory_to_sys_path() -> None:
     """
-    Recursively looks at parent folders starting from the current working directory until it finds 'ComfyUI' and 'ComfyUI-to-Python-Extension'.
-    Once found, the directories are added to sys.path.
+    Recursively looks at parent folders starting from the current working directory until it finds 'ComfyUI'.
+    Once found, the directory is added to sys.path.
     """
     start_path = os.getcwd()  # Get the current working directory
 
     def search_directory(path: str) -> None:
-        # Check if the current directory contains 'ComfyUI' or 'ComfyUI-to-Python-Extension'
-        for directory_name in ['ComfyUI', 'ComfyUI-to-Python-Extension']:
-            if directory_name in os.listdir(path):
-                directory_path = os.path.join(path, directory_name)
-                sys.path.append(directory_path)
-                print(f"'{directory_name}' found and added to sys.path: {directory_path}")
+        # Check if the current directory contains 'ComfyUI'
+        if 'ComfyUI' in os.listdir(path):
+            directory_path = os.path.join(path, 'ComfyUI')
+            sys.path.append(directory_path)
+            print(f"ComfyUI found and added to sys.path: {directory_path}")
 
         # Get the parent directory
         parent_directory = os.path.dirname(path)
