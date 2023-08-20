@@ -10,74 +10,18 @@ The `ComfyUI-to-Python-Extension` is a powerful tool that translates ComfyUI wor
 **To this:**
 
 ```
-import os
 import random
-import sys
-from typing import Sequence, Mapping, Any, Union
 import torch
+import sys
 
-
-def add_comfyui_directory_to_sys_path() -> None:
-    """
-    Recursively looks at parent folders starting from the current working directory until it finds 'ComfyUI'.
-    Once found, the directory is added to sys.path.
-    """
-    start_path = os.getcwd()  # Get the current working directory
-
-    def search_directory(path: str) -> None:
-        # Check if the current directory contains 'ComfyUI'
-        if "ComfyUI" in os.listdir(path):
-            directory_path = os.path.join(path, "ComfyUI")
-            sys.path.append(directory_path)
-            print(f"ComfyUI found and added to sys.path: {directory_path}")
-
-        # Get the parent directory
-        parent_directory = os.path.dirname(path)
-
-        # If the parent directory is the same as the current directory, we've reached the root and stop the search
-        if parent_directory == path:
-            return
-
-        # Recursively call the function with the parent directory
-        search_directory(parent_directory)
-
-    # Start the search from the current working directory
-    search_directory(start_path)
-
-
-def get_value_at_index(obj: Union[Sequence, Mapping], index: int) -> Any:
-    """Returns the value at the given index of a sequence or mapping.
-
-    If the object is a sequence (like list or string), returns the value at the given index.
-    If the object is a mapping (like a dictionary), returns the value at the index-th key.
-
-    Some return a dictionary, in these cases, we look for the "results" key
-
-    Args:
-        obj (Union[Sequence, Mapping]): The object to retrieve the value from.
-        index (int): The index of the value to retrieve.
-
-    Returns:
-        Any: The value at the given index.
-
-    Raises:
-        IndexError: If the index is out of bounds for the object and the object is not a mapping.
-    """
-    try:
-        return obj[index]
-    except KeyError:
-        return obj["result"][index]
-
-
-add_comfyui_directory_to_sys_path()
+sys.path.append("../")
 from nodes import (
-    CLIPTextEncode,
-    KSamplerAdvanced,
-    CheckpointLoaderSimple,
     VAEDecode,
-    SaveImage,
+    KSamplerAdvanced,
     EmptyLatentImage,
-    NODE_CLASS_MAPPINGS,
+    SaveImage,
+    CheckpointLoaderSimple,
+    CLIPTextEncode,
 )
 
 
@@ -95,12 +39,12 @@ def main():
 
         cliptextencode = CLIPTextEncode()
         cliptextencode_6 = cliptextencode.encode(
-            text="Kylo Ren trapped inside of a Mark Rothko painting",
-            clip=get_value_at_index(checkpointloadersimple_4, 1),
+            text="evening sunset scenery blue sky nature, glass bottle with a galaxy in it",
+            clip=checkpointloadersimple_4[1],
         )
 
         cliptextencode_7 = cliptextencode.encode(
-            text="text, watermark", clip=get_value_at_index(checkpointloadersimple_4, 1)
+            text="text, watermark", clip=checkpointloadersimple_4[1]
         )
 
         checkpointloadersimple_12 = checkpointloadersimple.load_checkpoint(
@@ -108,13 +52,12 @@ def main():
         )
 
         cliptextencode_15 = cliptextencode.encode(
-            text="Kylo Ren trapped inside of a Mark Rothko painting",
-            clip=get_value_at_index(checkpointloadersimple_12, 1),
+            text="evening sunset scenery blue sky nature, glass bottle with a galaxy in it",
+            clip=checkpointloadersimple_12[1],
         )
 
         cliptextencode_16 = cliptextencode.encode(
-            text="text, watermark",
-            clip=get_value_at_index(checkpointloadersimple_12, 1),
+            text="text, watermark", clip=checkpointloadersimple_12[1]
         )
 
         ksampleradvanced = KSamplerAdvanced()
@@ -132,10 +75,10 @@ def main():
                 start_at_step=0,
                 end_at_step=20,
                 return_with_leftover_noise="enable",
-                model=get_value_at_index(checkpointloadersimple_4, 0),
-                positive=get_value_at_index(cliptextencode_6, 0),
-                negative=get_value_at_index(cliptextencode_7, 0),
-                latent_image=get_value_at_index(emptylatentimage_5, 0),
+                model=checkpointloadersimple_4[0],
+                positive=cliptextencode_6[0],
+                negative=cliptextencode_7[0],
+                latent_image=emptylatentimage_5[0],
             )
 
             ksampleradvanced_11 = ksampleradvanced.sample(
@@ -148,19 +91,18 @@ def main():
                 start_at_step=20,
                 end_at_step=10000,
                 return_with_leftover_noise="disable",
-                model=get_value_at_index(checkpointloadersimple_12, 0),
-                positive=get_value_at_index(cliptextencode_15, 0),
-                negative=get_value_at_index(cliptextencode_16, 0),
-                latent_image=get_value_at_index(ksampleradvanced_10, 0),
+                model=checkpointloadersimple_12[0],
+                positive=cliptextencode_15[0],
+                negative=cliptextencode_16[0],
+                latent_image=ksampleradvanced_10[0],
             )
 
             vaedecode_17 = vaedecode.decode(
-                samples=get_value_at_index(ksampleradvanced_11, 0),
-                vae=get_value_at_index(checkpointloadersimple_12, 2),
+                samples=ksampleradvanced_11[0], vae=checkpointloadersimple_12[2]
             )
 
             saveimage_19 = saveimage.save_images(
-                filename_prefix="ComfyUI", images=get_value_at_index(vaedecode_17, 0)
+                filename_prefix="ComfyUI", images=vaedecode_17[0]
             )
 
 
