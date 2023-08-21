@@ -1,5 +1,6 @@
 import os
 from typing import Sequence, Mapping, Any, Union
+from pathlib import Path
 import sys
 
 sys.path.append('../')
@@ -53,6 +54,39 @@ def add_comfyui_directory_to_sys_path() -> None:
 
     # Start the search from the current working directory
     search_directory(start_path)
+
+def add_extra_model_paths() -> Path:
+    """
+    Parse the optional extra_model_paths.yaml file and add the parsed paths to the sys.path.
+    """
+    from pathlib import Path
+    from main import load_extra_path_config
+
+    def find_config_file(path: str, name: str = "extra_model_paths.yaml") -> Path:
+        # Check if the current directory contains the file
+        if name in os.listdir(path):
+            directory_path = os.path.join(path, name)
+            print(f"{name} found: {directory_path}")
+            return Path(directory_path)
+
+        # Get the parent directory
+        parent_directory = os.path.dirname(path)
+
+        # If the parent directory is the same as the current directory, we've reached the root and stop the search
+        if parent_directory == path:
+            return
+
+        # Recursively call the function with the parent directory
+        return find_config_file(parent_directory)
+
+    start_path = os.getcwd()  # Get the current working directory
+    file = find_config_file(start_path)
+    
+    if os.path.isfile(file):
+        load_extra_path_config(file)
+    else:
+        print("Could not find the extra_model_paths config file.")
+    
 
 
 def get_value_at_index(obj: Union[Sequence, Mapping], index: int) -> Any:

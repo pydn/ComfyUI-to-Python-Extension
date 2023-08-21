@@ -10,9 +10,10 @@ from typing import Dict, List, Any, Callable, Tuple
 
 import black
 
-from utils import import_custom_nodes, add_comfyui_directory_to_sys_path, get_value_at_index
-
 sys.path.append('../')
+sys.path.append('.')
+
+from utils import import_custom_nodes, add_comfyui_directory_to_sys_path, get_value_at_index, add_extra_model_paths
 
 from nodes import NODE_CLASS_MAPPINGS
 
@@ -306,11 +307,11 @@ class CodeGenerator:
         """
         # Get the source code of the utils functions as a string
         func_strings = []
-        for func in [add_comfyui_directory_to_sys_path, get_value_at_index]:
+        for func in [add_comfyui_directory_to_sys_path, get_value_at_index, add_extra_model_paths]:
             func_strings.append(f'\n{inspect.getsource(func)}')
         # Define static import statements required for the script
-        static_imports = ['import os', 'import random', 'import sys', 'from typing import Sequence, Mapping, Any, Union', 
-                          'import torch'] + func_strings + ['\n\nadd_comfyui_directory_to_sys_path()']
+        static_imports = ['import os', 'import random', 'from pathlib import Path', 'import sys', 'from typing import Sequence, Mapping, Any, Union', 
+                          'import torch'] + func_strings + ['\n\nadd_comfyui_directory_to_sys_path()\nadd_extra_model_paths()\n']
         # Check if custom nodes should be included
         if custom_nodes:
             static_imports.append(f'\n{inspect.getsource(import_custom_nodes)}\n')
