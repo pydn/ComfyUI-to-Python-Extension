@@ -11,9 +11,12 @@ from typing import Dict, List, Any, Callable, Tuple
 import black
 
 sys.path.append('../')
-sys.path.append('.')
 
-from utils import import_custom_nodes, add_comfyui_directory_to_sys_path, get_value_at_index, add_extra_model_paths
+try:
+   from utils import import_custom_nodes, find_path, add_comfyui_directory_to_sys_path, add_extra_model_paths, get_value_at_index
+except ImportError:
+    sys.path.append('.')
+    from utils import import_custom_nodes, find_path, add_comfyui_directory_to_sys_path, add_extra_model_paths, get_value_at_index
 
 from nodes import NODE_CLASS_MAPPINGS
 
@@ -307,7 +310,7 @@ class CodeGenerator:
         """
         # Get the source code of the utils functions as a string
         func_strings = []
-        for func in [add_comfyui_directory_to_sys_path, get_value_at_index, add_extra_model_paths]:
+        for func in [find_path, add_comfyui_directory_to_sys_path, add_extra_model_paths, get_value_at_index]:
             func_strings.append(f'\n{inspect.getsource(func)}')
         # Define static import statements required for the script
         static_imports = ['import os', 'import random', 'from pathlib import Path', 'import sys', 'from typing import Sequence, Mapping, Any, Union', 
@@ -434,7 +437,7 @@ if __name__ == '__main__':
     # Update class parameters here
     input_file = 'workflow_api.json'
     output_file = 'workflow_api.py'
-    queue_size = 10
+    queue_size = 2
 
     # Convert ComfyUI workflow to Python
     ComfyUItoPython(input_file=input_file, output_file=output_file, queue_size=queue_size)

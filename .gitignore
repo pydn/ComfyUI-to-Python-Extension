@@ -145,6 +145,3 @@ cython_debug/
 *.sql
 *.sqlite
 *.xml
-/workflow_api.json
-/workflow_api.py
-/custom_nodes/
