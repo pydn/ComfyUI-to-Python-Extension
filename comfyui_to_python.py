@@ -325,21 +325,6 @@ class CodeGenerator:
         final_code = black.format_str(final_code, mode=black.Mode())
 
         return final_code
-
-    def clean_variable_name(self, class_type: str) -> str:
-        clean_name = class_type.lower().strip()
-        
-        # Convert to lowercase and replace spaces with underscores
-        clean_name = clean_name.lower().replace("-", "_").replace(" ", "_")
-        
-        # Remove characters that are not letters, numbers, or underscores
-        clean_name = re.sub(r'[^a-z0-9_]', '', clean_name)
-        
-        # Ensure that it doesn't start with a number
-        if clean_name[0].isdigit():
-            clean_name = "_" + clean_name
-        
-        return clean_name
     
     def get_class_info(self, class_type: str) -> Tuple[str, str, str]:
         """Generates and returns necessary information about class type.
@@ -358,6 +343,23 @@ class CodeGenerator:
             class_code = f'{variable_name} = NODE_CLASS_MAPPINGS["{class_type}"]()'
 
         return class_type, import_statement, class_code
+    
+    @staticmethod
+    def clean_variable_name(class_type: str) -> str:
+        """
+        Remove any characters from variable name that could cause errors running the Python script.
+        """
+        # Convert to lowercase and replace spaces with underscores
+        clean_name = class_type.lower().strip().replace("-", "_").replace(" ", "_")
+        
+        # Remove characters that are not letters, numbers, or underscores
+        clean_name = re.sub(r'[^a-z0-9_]', '', clean_name)
+        
+        # Ensure that it doesn't start with a number
+        if clean_name[0].isdigit():
+            clean_name = "_" + clean_name
+        
+        return clean_name
 
     def get_function_parameters(self, func: Callable) -> List:
         """Get the names of a function's parameters.
