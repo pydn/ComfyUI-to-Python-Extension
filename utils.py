@@ -1,6 +1,5 @@
 import os
 from typing import Sequence, Mapping, Any, Union
-from pathlib import Path
 import sys
 
 sys.path.append('../')
@@ -28,7 +27,8 @@ def import_custom_nodes() -> None:
     # Initializing custom nodes
     init_custom_nodes()
 
-def find_path(name: str, path: str = None) -> Union[Path, None]:
+
+def find_path(name: str, path: str = None) -> str:
     """
     Recursively looks at parent folders starting from the given path until it finds the given name. 
     Returns the path as a Path object if found, or None otherwise.
@@ -41,7 +41,7 @@ def find_path(name: str, path: str = None) -> Union[Path, None]:
     if name in os.listdir(path):
         path_name = os.path.join(path, name)
         print(f"{name} found: {path_name}")
-        return Path(path_name)
+        return path_name
 
     # Get the parent directory
     parent_directory = os.path.dirname(path)
@@ -63,7 +63,8 @@ def add_comfyui_directory_to_sys_path() -> None:
         sys.path.append(comfyui_path)
         print(f"'{comfyui_path}' added to sys.path")
 
-def add_extra_model_paths() -> Path:
+
+def add_extra_model_paths() -> None:
     """
     Parse the optional extra_model_paths.yaml file and add the parsed paths to the sys.path.
     """

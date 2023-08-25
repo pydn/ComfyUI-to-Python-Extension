@@ -2,7 +2,6 @@ import copy
 import glob
 import inspect
 import json
-import logging
 import os
 import random
 import sys
@@ -11,18 +10,11 @@ from typing import Dict, List, Any, Callable, Tuple
 
 import black
 
+
+from utils import import_custom_nodes, find_path, add_comfyui_directory_to_sys_path, add_extra_model_paths, get_value_at_index
+
 sys.path.append('../')
-
-try:
-   from utils import import_custom_nodes, find_path, add_comfyui_directory_to_sys_path, add_extra_model_paths, get_value_at_index
-except ImportError:
-    sys.path.append('.')
-    from utils import import_custom_nodes, find_path, add_comfyui_directory_to_sys_path, add_extra_model_paths, get_value_at_index
-
 from nodes import NODE_CLASS_MAPPINGS
-
-
-logging.basicConfig(level=logging.INFO)
 
 
 class FileHandler:
@@ -311,10 +303,10 @@ class CodeGenerator:
         """
         # Get the source code of the utils functions as a string
         func_strings = []
-        for func in [find_path, add_comfyui_directory_to_sys_path, add_extra_model_paths, get_value_at_index]:
+        for func in [get_value_at_index, find_path, add_comfyui_directory_to_sys_path, add_extra_model_paths]:
             func_strings.append(f'\n{inspect.getsource(func)}')
         # Define static import statements required for the script
-        static_imports = ['import os', 'import random', 'from pathlib import Path', 'import sys', 'from typing import Sequence, Mapping, Any, Union', 
+        static_imports = ['import os', 'import random', 'import sys', 'from typing import Sequence, Mapping, Any, Union', 
                           'import torch'] + func_strings + ['\n\nadd_comfyui_directory_to_sys_path()\nadd_extra_model_paths()\n']
         # Check if custom nodes should be included
         if custom_nodes:
