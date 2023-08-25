@@ -348,6 +348,12 @@ class CodeGenerator:
     def clean_variable_name(class_type: str) -> str:
         """
         Remove any characters from variable name that could cause errors running the Python script.
+
+        Args:
+            class_type (str): Class type.
+
+        Returns:
+            str: Cleaned variable name with no special characters or spaces
         """
         # Convert to lowercase and replace spaces with underscores
         clean_name = class_type.lower().strip().replace("-", "_").replace(" ", "_")
