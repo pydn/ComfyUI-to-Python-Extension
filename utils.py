@@ -27,32 +27,56 @@ def import_custom_nodes() -> None:
     # Initializing custom nodes
     init_custom_nodes()
 
+
+def find_path(name: str, path: str = None) -> str:
+    """
+    Recursively looks at parent folders starting from the given path until it finds the given name. 
+    Returns the path as a Path object if found, or None otherwise.
+    """
+    # If no path is given, use the current working directory
+    if path is None:
+        path = os.getcwd()
+    
+    # Check if the current directory contains the name
+    if name in os.listdir(path):
+        path_name = os.path.join(path, name)
+        print(f"{name} found: {path_name}")
+        return path_name
+
+    # Get the parent directory
+    parent_directory = os.path.dirname(path)
+
+    # If the parent directory is the same as the current directory, we've reached the root and stop the search
+    if parent_directory == path:
+        return None
+
+    # Recursively call the function with the parent directory
+    return find_path(name, parent_directory)
+
+
 def add_comfyui_directory_to_sys_path() -> None:
     """
-    Recursively looks at parent folders starting from the current working directory until it finds 'ComfyUI'.
-    Once found, the directory is added to sys.path.
+    Add 'ComfyUI' to the sys.path
     """
-    start_path = os.getcwd()  # Get the current working directory
+    comfyui_path = find_path('ComfyUI')
+    if comfyui_path is not None and os.path.isdir(comfyui_path):
+        sys.path.append(comfyui_path)
+        print(f"'{comfyui_path}' added to sys.path")
 
-    def search_directory(path: str) -> None:
-        # Check if the current directory contains 'ComfyUI'
-        if 'ComfyUI' in os.listdir(path):
-            directory_path = os.path.join(path, 'ComfyUI')
-            sys.path.append(directory_path)
-            print(f"ComfyUI found and added to sys.path: {directory_path}")
 
-        # Get the parent directory
-        parent_directory = os.path.dirname(path)
+def add_extra_model_paths() -> None:
+    """
+    Parse the optional extra_model_paths.yaml file and add the parsed paths to the sys.path.
+    """
+    from main import load_extra_path_config
 
-        # If the parent directory is the same as the current directory, we've reached the root and stop the search
-        if parent_directory == path:
-            return
-
-        # Recursively call the function with the parent directory
-        search_directory(parent_directory)
-
-    # Start the search from the current working directory
-    search_directory(start_path)
+    extra_model_paths = find_path("extra_model_paths.yaml")
+    
+    if extra_model_paths is not None:
+        load_extra_path_config(extra_model_paths)
+    else:
+        print("Could not find the extra_model_paths config file.")
+    
 
 
 def get_value_at_index(obj: Union[Sequence, Mapping], index: int) -> Any:
