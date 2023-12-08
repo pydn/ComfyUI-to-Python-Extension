@@ -1,3 +1,4 @@
+import argparse
 import copy
 import glob
 import inspect
@@ -451,10 +452,17 @@ class ComfyUItoPython:
 
 
 if __name__ == '__main__':
-    # Update class parameters here
-    input_file = 'workflow_api.json'
-    output_file = 'workflow_api.py'
-    queue_size = 10
+    """
+    Parse script args:
+    - `input_file`: (str) Path to the input JSON file (default: workflow_api.json)
+    - `output_file`: (str) Path to the output Python file (default: workflow_api.py)
+    - `queue_size`: (int) The number of photos that will be created by the script (default: 10)
+    """
+    parser = argparse.ArgumentParser(description='Convert ComfyUI workflow to Python')
+    parser.add_argument('--input_file', type=str, default='workflow_api.json', help='Path to the input JSON file')
+    parser.add_argument('--output_file', type=str, default='workflow_api.py', help='Path to the output Python file')
+    parser.add_argument('--queue_size', type=int, default=10, help='The number of photos that will be created by the script')
+    args = parser.parse_args()
 
     # Convert ComfyUI workflow to Python
-    ComfyUItoPython(input_file=input_file, output_file=output_file, queue_size=queue_size)
+    ComfyUItoPython(input_file=args.input_file, output_file=args.output_file, queue_size=args.queue_size)
