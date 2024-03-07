@@ -12,7 +12,7 @@ Upon installation, there will be a button labeled "Save as Script" on the interf
 
 ![A button that exports the current script on the ComfyUI](images/save_as_script.png)
 
-Click that button and enter your preferred name for the downloaded script (extension not added automatically), and your file will be downloaded.
+Click that button and enter your preferred name for the downloaded script (extension added automatically), and your file will be downloaded.
 
 Note that if you use the script this way, you do **not** need to enable developer mode. You *will* if you use the CLI (to get the API JSON).
 
