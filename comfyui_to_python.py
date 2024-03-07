@@ -400,12 +400,12 @@ class ComfyUItoPython:
     """
 
     def __init__(self, workflow: str = "", input_file: str = "", output_file: (str | TextIO) = "", queue_size: int = 10, node_class_mappings: Dict = NODE_CLASS_MAPPINGS):
-        """Initialize the ComfyUItoPython class with the given parameters.
+        """Initialize the ComfyUItoPython class with the given parameters. Exactly one of workflow or input_file must be specified.
 
         Args:
-            workflow (str): The 
+            workflow (str): The workflow's JSON.
             input_file (str): Path to the input JSON file.
-            output_file (str): Path to the output Python file.
+            output_file (str | TextIO): Path to the output file or a file-like object.
             queue_size (int): The number of times a workflow will be executed by the script. Defaults to 10.
             node_class_mappings (Dict): Mappings of node classes. Defaults to NODE_CLASS_MAPPINGS.
         """
@@ -413,6 +413,9 @@ class ComfyUItoPython:
             raise ValueError("Can't provide both input_file and workflow")
         elif not input_file and not workflow:
             raise ValueError("Needs input_file or workflow")
+        
+        if not output_file:
+            raise ValueError("Needs output_file")
         
         self.workflow = workflow
         self.input_file = input_file
@@ -430,7 +433,7 @@ class ComfyUItoPython:
             None
         """
         #if self.should_init_custom_nodes:
-        # Step 1: Import all custom nodes (already done for us)
+        # Step 1: Import all custom nodes (already done for us in this fork)
         #import_custom_nodes()
 
         # Step 2: Read JSON data from the input file

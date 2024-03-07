@@ -1,6 +1,6 @@
 ## ComfyUI-to-Python-Extension (SaveAsScript version)
 
-This is a fork of the [ComfyUI-To-Python-Extension](https://github.com/pydn/ComfyUI-to-Python-Extension) by Peyton DeNiro. It provides a more robust command-line interface and the ability to export your current workflow as a script directly from the ComfyUI web interface.
+This is a fork maintained by Anthony Maranto of the original [ComfyUI-To-Python-Extension](https://github.com/pydn/ComfyUI-to-Python-Extension) by Peyton DeNiro. It provides a more robust command-line interface and the ability to export your current workflow as a script directly from the ComfyUI web interface.
 
 ### Usage (Web)
 
@@ -8,7 +8,7 @@ Upon installation, there will be a button labeled "Save as Script" on the interf
 
 ![A button that exports the current script on the ComfyUI](images/save_as_script.png)
 
-Click that button and enter your preferred name for the downloaded script (no ".py" is appeneded automatically), and your file will be downloaded.
+Click that button and enter your preferred name for the downloaded script (extension not added automatically), and your file will be downloaded.
 
 Note that if you use the script this way, you do **not** need to enable developer mode. You *will* if you use the CLI (to get the API JSON).
 
@@ -32,6 +32,10 @@ options:
   --yes, --overwrite, -y
                         Overwrite the output file if it exists
 ```
+
+### Other Changes
+
+I also fixed what seemed to be a minor bug with exporting certain Crystools nodes, possibly due to their unusual name.
 
 ## Original Description
 
