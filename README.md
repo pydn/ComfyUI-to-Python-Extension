@@ -21,16 +21,17 @@ Note that if you use the script this way, you do **not** need to enable develope
 Navigating to the extension directory, you can also use the basic CLI included in the script to save your script without changing the Python file.
 
 ```bash
-usage: comfyui_to_python.py [-h] [--queue-size QUEUE_SIZE] [--yes] workflow output
+usage: comfyui_to_python.py [-h] [--output OUTPUT] [--queue-size QUEUE_SIZE] [--yes] workflow
 
 Converts a ComfyUI-style workflow.json file to a Python file. Must have been exported with API calls
 
 positional arguments:
   workflow              The workflow.json file to convert
-  output                The output file (defaults to [input file].py)
 
 options:
   -h, --help            show this help message and exit
+  --output OUTPUT, -o OUTPUT
+                        The output file (defaults to [input file].py)
   --queue-size QUEUE_SIZE, -q QUEUE_SIZE
                         The queue size per run
   --yes, --overwrite, -y
