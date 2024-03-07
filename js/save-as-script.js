@@ -26,11 +26,15 @@ app.registerExtension({
 				}
 				
 				app.graphToPrompt().then(async (p) => {
-					const json = JSON.stringify({name: filename, workflow: JSON.stringify(p.output, null, 2)}, null, 2); // convert the data to a JSON string
+					const json = JSON.stringify({name: filename + ".json", workflow: JSON.stringify(p.output, null, 2)}, null, 2); // convert the data to a JSON string
 					var response = await api.fetchApi(`/saveasscript`, { method: "POST", body: json });
 					if(response.status == 200) {
-						const blob = new Blob([await response.text()], {type: "application/json"});
+						const blob = new Blob([await response.text()], {type: "text/python;charset=utf-8"});
 						const url = URL.createObjectURL(blob);
+						if(!filename.endsWith(".py")) {
+							filename += ".py";
+						}
+
 						const a = $el("a", {
 							href: url,
 							download: filename,
