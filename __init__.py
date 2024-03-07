@@ -2,7 +2,6 @@ import sys
 import os
 
 from io import StringIO
-import json
 
 import traceback
 
@@ -10,6 +9,19 @@ from aiohttp import web
 
 ext_dir = os.path.dirname(__file__)
 sys.path.append(ext_dir)
+
+try:
+    import black
+except ImportError:
+    print("Unable to import requirements for ComfyUI-SaveAsScript.")
+    print("Installing...")
+
+    import importlib
+    spec = importlib.util.spec_from_file_location('impact_install', os.path.join(os.path.dirname(__file__), 'install.py'))
+    impact_install = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(impact_install)
+
+    print("Successfully installed. Hopefully, at least.")
 
 # Prevent reimporting of custom nodes
 os.environ["RUNNING_IN_COMFYUI"] = "TRUE"
