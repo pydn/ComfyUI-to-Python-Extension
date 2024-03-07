@@ -17,7 +17,6 @@ add_comfyui_directory_to_sys_path()
 from nodes import NODE_CLASS_MAPPINGS
 import nodes
 
-
 class FileHandler:
     """Handles reading and writing files.
 
@@ -25,7 +24,7 @@ class FileHandler:
     """
 
     @staticmethod
-    def read_json_file(file_path: str | TextIO) -> dict:
+    def read_json_file(file_path: str | TextIO, encoding: str = "utf-8") -> dict:
         """
         Reads a JSON file and returns its contents as a dictionary.
 
@@ -41,7 +40,7 @@ class FileHandler:
         """
 
         if hasattr(file_path, "read"): return json.load(file_path)
-        with open(file_path, 'r') as file:
+        with open(file_path, 'r', encoding="utf-8") as file:
             data = json.load(file)
         return data
 
@@ -65,7 +64,7 @@ class FileHandler:
                 os.makedirs(directory)
 
             # Save the code to a .py file
-            with open(file_path, 'w') as file:
+            with open(file_path, 'w', encoding="utf-8") as file:
                 file.write(code)
         else:
             file_path.write(code)
@@ -294,7 +293,7 @@ class CodeGenerator:
         """
         # Get the source code of the utils functions as a string
         func_strings = []
-        for func in [get_value_at_index, find_path, add_comfyui_directory_to_sys_path, add_extra_model_paths]:
+        for func in [get_value_at_index, find_path, add_comfyui_directory_to_sys_path, add_extra_model_paths, import_custom_nodes]:
             func_strings.append(f'\n{inspect.getsource(func)}')
         # Define static import statements required for the script
         static_imports = ['import os', 'import random', 'import sys', 'from typing import Sequence, Mapping, Any, Union', 
@@ -399,7 +398,8 @@ class ComfyUItoPython:
         base_node_class_mappings (Dict): Base mappings of node classes.
     """
 
-    def __init__(self, workflow: str = "", input_file: str = "", output_file: (str | TextIO) = "", queue_size: int = 10, node_class_mappings: Dict = NODE_CLASS_MAPPINGS):
+    def __init__(self, workflow: str = "", input_file: str = "", output_file: (str | TextIO) = "", queue_size: int = 10, node_class_mappings: Dict = NODE_CLASS_MAPPINGS,
+                 needs_init_custom_nodes: bool = False):
         """Initialize the ComfyUItoPython class with the given parameters. Exactly one of workflow or input_file must be specified.
 
         Args:
@@ -408,6 +408,7 @@ class ComfyUItoPython:
             output_file (str | TextIO): Path to the output file or a file-like object.
             queue_size (int): The number of times a workflow will be executed by the script. Defaults to 10.
             node_class_mappings (Dict): Mappings of node classes. Defaults to NODE_CLASS_MAPPINGS.
+            needs_init_custom_nodes (bool): Whether to initialize custom nodes. Defaults to False.
         """
         if input_file and workflow:
             raise ValueError("Can't provide both input_file and workflow")
@@ -422,6 +423,7 @@ class ComfyUItoPython:
         self.output_file = output_file
         self.queue_size = queue_size
         self.node_class_mappings = node_class_mappings
+        self.needs_init_custom_nodes = needs_init_custom_nodes
         
         self.base_node_class_mappings = copy.deepcopy(self.node_class_mappings)
         self.execute()
@@ -432,9 +434,12 @@ class ComfyUItoPython:
         Returns:
             None
         """
-        #if self.should_init_custom_nodes:
-        # Step 1: Import all custom nodes (already done for us in this fork)
-        #import_custom_nodes()
+        # Step 1: Import all custom nodes if we need to
+        if self.needs_init_custom_nodes:
+            import_custom_nodes()
+        else:
+            # If they're already imported, we don't know which nodes are custom nodes, so we need to import all of them
+            self.base_node_class_mappings = {}
 
         # Step 2: Read JSON data from the input file
         if self.input_file:
@@ -462,19 +467,18 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser(description="Converts a ComfyUI-style workflow.json file to a Python file. Must have been exported with API calls")
     
     ap.add_argument("workflow", help="The workflow.json file to convert")
-    ap.add_argument("output", default=None, help="The output file (defaults to [input file].py)")
+    ap.add_argument("--output", "-o", default=None, help="The output file (defaults to [input file].py)")
     ap.add_argument("--queue-size", "-q", default=1, type=int, help="The queue size per run")
     ap.add_argument("--yes", "--overwrite", "-y", action="store_true", help="Overwrite the output file if it exists")
     
     args = ap.parse_args()
     
-    
-    output_file = args.output_file if args.output_file else args.input_file + ".py"
-    if os.path.isfile(output_file):
+    output = args.output if args.output else args.workflow + ".py"
+    if os.path.isfile(output):
         if not args.yes:
-            if input("Are you sure you want to overwrite " + output_file + "?\nY/n").strip().lower() not in ("y", "yes"):
+            if input("Are you sure you want to overwrite " + output + "?\nY/n").strip().lower() not in ("y", "yes"):
                 print("Exiting.")
                 sys.exit(1)
 
     # Convert ComfyUI workflow to Python
-    ComfyUItoPython(input_file=args.input_file, output_file=output_file, queue_size=args.queue_size)
+    ComfyUItoPython(input_file=args.workflow, output_file=output, queue_size=args.queue_size, needs_init_custom_nodes=True)
