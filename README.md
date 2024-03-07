@@ -46,7 +46,7 @@ I also fixed what seemed to be a minor bug with exporting certain Crystools node
 
 Disable export of invalid nodes (ones for which required args are not satisfied) and log a warning to the console.
 
-## Original Description
+## Description of ComfyUI-to-Python-Extension (usage altered)
 
 The `ComfyUI-to-Python-Extension` is a powerful tool that translates [ComfyUI](https://github.com/comfyanonymous/ComfyUI) workflows into executable Python code. Designed to bridge the gap between ComfyUI's visual interface and Python's programming environment, this script facilitates the seamless transition from design to code execution. Whether you're a data scientist, a software developer, or an AI enthusiast, this tool streamlines the process of implementing ComfyUI workflows in Python.
 
@@ -171,59 +171,10 @@ if __name__ == "__main__":
 ## Usage
 
 
-1. Navigate to your `ComfyUI` directory
+1. Install the custom_node (via git cloning or the Manager)
 
-2. Clone this repo
-    ```bash
-    git clone https://github.com/pydn/ComfyUI-to-Python-Extension.git
-    ```
+2. Click the button in the web UI OR run the CLI
 
-    After cloning the repo, your `ComfyUI` directory should look like this:
-    ```
-    /comfy
-    /comfy_extras
-    /ComfyUI-to-Python-Extension
-    /custom_nodes
-    /input
-    /models
-    /output
-    /script_examples
-    /web
-    .gitignore
-    LICENSE
-    README.md
-    comfyui_screenshot.png
-    cuda_mollac.py
-    execution.py
-    extra_model_paths.yaml.example
-    folder_paths.py
-    latent_preview.py
-    main.py
-    nodes.py
-    requirements.txt
-    server.py
-    ```
+3. Move the created .py file to your `ComfyUI` folder
 
-3. Navigate to the `ComfyUI-to-Python-Extension` folder and install requirements
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-4. Launch ComfyUI, click the gear icon over `Queue Prompt`, then check `Enable Dev mode Options`. **THE SCRIPT WILL NOT WORK IF YOU DO NOT ENABLE THIS OPTION!**
-
-![Enable Dev Mode Options](images/dev_mode_options.jpg)
-
-5. Load up your favorite workflows, then click the newly enabled `Save (API Format)` button under Queue Prompt
-
-6. Move the downloaded .json workflow file to your `ComfyUI/ComfyUI-to-Python-Extension` folder
-
-7. If needed, update the `input_file` and `output_file` variables at the bottom of `comfyui_to_python.py` to match the name of your .json workflow file and desired .py file name. By default, the script will look for a file called `workflow_api.json`. You can also update the `queue_size` variable to your desired number of images that you want to generate in a single script execution. By default, the scripts will generate 10 images.
-
-8. Run the script:
-   ```bash
-   python comfyui_to_python.py
-   ```
-
-9. After running `comfyui_to_python.py`, a new .py file will be created in the current working directory. If you made no changes, look for `workflow_api.py`.
-
-10. Now you can execute the newly created .py file to generate images without launching a server.
+4. Run the generated script:
