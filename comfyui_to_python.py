@@ -6,25 +6,26 @@ import os
 import random
 import sys
 import re
-from typing import Dict, List, Any, Callable, Tuple
+from typing import Dict, List, Any, Callable, Tuple, TextIO
 
 import black
 
 
-from utils import import_custom_nodes, find_path, add_comfyui_directory_to_sys_path, add_extra_model_paths, get_value_at_index
+from comfyui_to_python_utils import import_custom_nodes, find_path, add_comfyui_directory_to_sys_path, add_extra_model_paths, get_value_at_index
 
-sys.path.append('../')
+add_comfyui_directory_to_sys_path()
 from nodes import NODE_CLASS_MAPPINGS
+import nodes
 
 
 class FileHandler:
     """Handles reading and writing files.
 
-    This class provides methods to read JSON data from an input file and write code to an output file.
+    This class provides methods to read JSON data from an input file and write code to an output file (either file-like objects or string paths).
     """
 
     @staticmethod
-    def read_json_file(file_path: str) -> dict:
+    def read_json_file(file_path: str | TextIO) -> dict:
         """
         Reads a JSON file and returns its contents as a dictionary.
 
@@ -39,33 +40,13 @@ class FileHandler:
             ValueError: If the file is not a valid JSON.
         """
 
-        try:
-            with open(file_path, 'r') as file:
-                data = json.load(file)
-            return data
-
-        except FileNotFoundError:
-            # Get the directory from the file_path
-            directory = os.path.dirname(file_path)
-
-            # If the directory is an empty string (which means file is in the current directory),
-            # get the current working directory
-            if not directory:
-                directory = os.getcwd()
-
-            # Find all JSON files in the directory
-            json_files = glob.glob(f"{directory}/*.json")
-
-            # Format the list of JSON files as a string
-            json_files_str = "\n".join(json_files)
-
-            raise FileNotFoundError(f"\n\nFile not found: {file_path}. JSON files in the directory:\n{json_files_str}")
-
-        except json.JSONDecodeError:
-            raise ValueError(f"Invalid JSON format in file: {file_path}")
+        if hasattr(file_path, "read"): return json.load(file_path)
+        with open(file_path, 'r') as file:
+            data = json.load(file)
+        return data
 
     @staticmethod
-    def write_code_to_file(file_path: str, code: str) -> None:
+    def write_code_to_file(file_path: str | TextIO, code: str) -> None:
         """Write the specified code to a Python file.
 
         Args:
@@ -75,16 +56,19 @@ class FileHandler:
         Returns:
             None
         """
-        # Extract directory from the filename
-        directory = os.path.dirname(file_path)
+        if isinstance(file_path, str):
+            # Extract directory from the filename
+            directory = os.path.dirname(file_path)
 
-        # If the directory does not exist, create it
-        if directory and not os.path.exists(directory):
-            os.makedirs(directory)
+            # If the directory does not exist, create it
+            if directory and not os.path.exists(directory):
+                os.makedirs(directory)
 
-        # Save the code to a .py file
-        with open(file_path, 'w') as file:
-            file.write(code)
+            # Save the code to a .py file
+            with open(file_path, 'w') as file:
+                file.write(code)
+        else:
+            file_path.write(code)
 
 
 class LoadOrderDeterminer:
@@ -181,6 +165,13 @@ class CodeGenerator:
         """
         self.node_class_mappings = node_class_mappings
         self.base_node_class_mappings = base_node_class_mappings
+    
+    def can_be_imported(self, import_name: str):
+        if import_name in self.base_node_class_mappings.keys():
+            if getattr(nodes, import_name, None) is not None:
+                return True
+        
+        return False
 
     def generate_workflow(self, load_order: List, filename: str = 'generated_code_workflow.py', queue_size: int = 10) -> str:
         """Generate the execution code based on the load order.
@@ -212,10 +203,10 @@ class CodeGenerator:
                 # No need to use preview image nodes since we are executing the script in a terminal
                 if class_type == 'PreviewImage':
                     continue
-
+                
                 class_type, import_statement, class_code = self.get_class_info(class_type)
                 initialized_objects[class_type] = self.clean_variable_name(class_type)
-                if class_type in self.base_node_class_mappings.keys():
+                if self.can_be_imported(class_type):
                     import_statements.add(import_statement)
                 if class_type not in self.base_node_class_mappings.keys():
                     custom_nodes = True
@@ -337,7 +328,7 @@ class CodeGenerator:
         """
         import_statement = class_type
         variable_name = self.clean_variable_name(class_type)
-        if class_type in self.base_node_class_mappings.keys():
+        if self.can_be_imported(class_type):
             class_code = f'{variable_name} = {class_type.strip()}()'
         else:
             class_code = f'{variable_name} = NODE_CLASS_MAPPINGS["{class_type}"]()'
@@ -408,19 +399,27 @@ class ComfyUItoPython:
         base_node_class_mappings (Dict): Base mappings of node classes.
     """
 
-    def __init__(self, input_file: str, output_file: str, queue_size: int = 10, node_class_mappings: Dict = NODE_CLASS_MAPPINGS):
+    def __init__(self, workflow: str = "", input_file: str = "", output_file: (str | TextIO) = "", queue_size: int = 10, node_class_mappings: Dict = NODE_CLASS_MAPPINGS):
         """Initialize the ComfyUItoPython class with the given parameters.
 
         Args:
+            workflow (str): The 
             input_file (str): Path to the input JSON file.
             output_file (str): Path to the output Python file.
             queue_size (int): The number of times a workflow will be executed by the script. Defaults to 10.
             node_class_mappings (Dict): Mappings of node classes. Defaults to NODE_CLASS_MAPPINGS.
         """
+        if input_file and workflow:
+            raise ValueError("Can't provide both input_file and workflow")
+        elif not input_file and not workflow:
+            raise ValueError("Needs input_file or workflow")
+        
+        self.workflow = workflow
         self.input_file = input_file
         self.output_file = output_file
         self.queue_size = queue_size
         self.node_class_mappings = node_class_mappings
+        
         self.base_node_class_mappings = copy.deepcopy(self.node_class_mappings)
         self.execute()
 
@@ -430,11 +429,15 @@ class ComfyUItoPython:
         Returns:
             None
         """
-        # Step 1: Import all custom nodes
-        import_custom_nodes()
+        #if self.should_init_custom_nodes:
+        # Step 1: Import all custom nodes (already done for us)
+        #import_custom_nodes()
 
         # Step 2: Read JSON data from the input file
-        data = FileHandler.read_json_file(self.input_file)
+        if self.input_file:
+            data = FileHandler.read_json_file(self.input_file)
+        else:
+            data = json.loads(self.workflow)
 
         # Step 3: Determine the load order
         load_order_determiner = LoadOrderDeterminer(data, self.node_class_mappings)
@@ -451,10 +454,24 @@ class ComfyUItoPython:
 
 
 if __name__ == '__main__':
-    # Update class parameters here
-    input_file = 'workflow_api.json'
-    output_file = 'workflow_api.py'
-    queue_size = 10
+    import argparse
+    
+    ap = argparse.ArgumentParser(description="Converts a ComfyUI-style workflow.json file to a Python file. Must have been exported with API calls")
+    
+    ap.add_argument("workflow", help="The workflow.json file to convert")
+    ap.add_argument("output", default=None, help="The output file (defaults to [input file].py)")
+    ap.add_argument("--queue-size", "-q", default=1, type=int, help="The queue size per run")
+    ap.add_argument("--yes", "--overwrite", "-y", action="store_true", help="Overwrite the output file if it exists")
+    
+    args = ap.parse_args()
+    
+    
+    output_file = args.output_file if args.output_file else args.input_file + ".py"
+    if os.path.isfile(output_file):
+        if not args.yes:
+            if input("Are you sure you want to overwrite " + output_file + "?\nY/n").strip().lower() not in ("y", "yes"):
+                print("Exiting.")
+                sys.exit(1)
 
     # Convert ComfyUI workflow to Python
-    ComfyUItoPython(input_file=input_file, output_file=output_file, queue_size=queue_size)
+    ComfyUItoPython(input_file=args.input_file, output_file=output_file, queue_size=args.queue_size)

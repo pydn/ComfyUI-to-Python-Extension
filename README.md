@@ -1,4 +1,39 @@
-## ComfyUI-to-Python-Extension
+## ComfyUI-to-Python-Extension (SaveAsScript version)
+
+This is a fork of the [ComfyUI-To-Python-Extension](https://github.com/pydn/ComfyUI-to-Python-Extension) by Peyton DeNiro. It provides a more robust command-line interface and the ability to export your current workflow as a script directly from the ComfyUI web interface.
+
+### Usage (Web)
+
+Upon installation, there will be a button labeled "Save as Script" on the interface, pictured below:
+
+![A button that exports the current script on the ComfyUI](images/save_as_script.png)
+
+Click that button and enter your preferred name for the downloaded script (no ".py" is appeneded automatically), and your file will be downloaded.
+
+Note that if you use the script this way, you do **not** need to enable developer mode. You *will* if you use the CLI (to get the API JSON).
+
+### Usage (CLI)
+
+Navigating to the extension directory, you can also use the basic CLI included in the script to save your script without changing the Python file.
+
+```bash
+usage: comfyui_to_python.py [-h] [--queue-size QUEUE_SIZE] [--yes] workflow output
+
+Converts a ComfyUI-style workflow.json file to a Python file. Must have been exported with API calls
+
+positional arguments:
+  workflow              The workflow.json file to convert
+  output                The output file (defaults to [input file].py)
+
+options:
+  -h, --help            show this help message and exit
+  --queue-size QUEUE_SIZE, -q QUEUE_SIZE
+                        The queue size per run
+  --yes, --overwrite, -y
+                        Overwrite the output file if it exists
+```
+
+## Original Description
 
 The `ComfyUI-to-Python-Extension` is a powerful tool that translates [ComfyUI](https://github.com/comfyanonymous/ComfyUI) workflows into executable Python code. Designed to bridge the gap between ComfyUI's visual interface and Python's programming environment, this script facilitates the seamless transition from design to code execution. Whether you're a data scientist, a software developer, or an AI enthusiast, this tool streamlines the process of implementing ComfyUI workflows in Python.
 
