@@ -177,4 +177,4 @@ if __name__ == "__main__":
 
 3. Move the created .py file to your `ComfyUI` folder
 
-4. Run the generated script:
+4. Run the generated script!
