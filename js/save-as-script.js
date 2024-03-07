@@ -20,7 +20,7 @@ app.registerExtension({
 		const saveButton = document.createElement("button");
 		saveButton.textContent = "Save as Script";
 		saveButton.onclick = () => {
-				const filename = prompt("Save script as:");
+				var filename = prompt("Save script as:");
 				if(filename === undefined || filename === null || filename === "") {
 					return
 				}
