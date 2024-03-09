@@ -101,3 +101,10 @@ def get_value_at_index(obj: Union[Sequence, Mapping], index: int) -> Any:
         return obj[index]
     except KeyError:
         return obj['result'][index]
+
+def parse_arg(s: str):
+    """ Parses a JSON string, returning it unchanged if the parsing fails. """
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        return s
