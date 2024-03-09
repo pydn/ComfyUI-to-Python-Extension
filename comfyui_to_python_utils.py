@@ -4,6 +4,7 @@ import sys
 
 sys.path.append('../')
 
+args = None
 
 def import_custom_nodes() -> None:
     """Find all custom nodes in the custom_nodes folder and add those node objects to NODE_CLASS_MAPPINGS
@@ -35,7 +36,10 @@ def find_path(name: str, path: str = None) -> str:
     """
     # If no path is given, use the current working directory
     if path is None:
-        path = os.getcwd()
+        if args is None or args.comfyui_directory is None:
+            path = os.getcwd()
+        else:
+            path = args.comfyui_directory
     
     # Check if the current directory contains the name
     if name in os.listdir(path):
