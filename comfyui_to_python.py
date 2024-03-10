@@ -280,7 +280,8 @@ class CodeGenerator:
         Returns:
             str: Formatted argument as a string.
         """
-        if key == 'noise_seed' or key == 'seed':
+        # Randomize the seed if it's a set value
+        if isinstance(value, int) and (key == 'noise_seed' or key == 'seed'):
             return f'{key}=random.randint(1, 2**64)'
         elif isinstance(value, str):
             return f'{key}={repr(value)}'
