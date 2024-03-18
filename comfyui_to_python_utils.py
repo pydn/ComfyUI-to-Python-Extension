@@ -161,10 +161,9 @@ def save_image_wrapper(cls):
                             if os.path.isdir(args.output):
                                 subfolder = args.output
                                 file = "output"
-                            elif os.pathsep in args.output:
-                                subfolder, file = os.path.split(args.output)
                             else:
-                                file = args.output
+                                subfolder, file = os.path.split(args.output)
+                            
                             if subfolder == "":
                                 subfolder = os.getcwd()
                             
@@ -179,6 +178,7 @@ def save_image_wrapper(cls):
                                     break
                         
                         img.save(os.path.join(subfolder, file), pnginfo=metadata, compress_level=self.compress_level)
+                        print("Saved image to", os.path.join(subfolder, file))
                         results.append({
                             "filename": file,
                             "subfolder": subfolder,
