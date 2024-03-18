@@ -112,3 +112,79 @@ def parse_arg(s: str):
         return json.loads(s)
     except json.JSONDecodeError:
         return s
+
+def save_image_wrapper(cls):
+    if args.output is None: return cls
+    
+    from PIL import Image, ImageOps, ImageSequence
+    from PIL.PngImagePlugin import PngInfo
+
+    import numpy as np
+
+    class WrappedSaveImage(cls):
+        counter = 0
+
+        def save_images(self, images, filename_prefix="ComfyUI", prompt=None, extra_pnginfo=None):
+            if args.output is None:
+                return super().save_images(images, filename_prefix, prompt, extra_pnginfo)
+            else:
+                if len(images) > 1 and args.output == "-":
+                    raise ValueError("Cannot save multiple images to stdout")
+                filename_prefix += self.prefix_append
+                
+                results = list()
+                for (batch_number, image) in enumerate(images):
+                    i = 255. * image.cpu().numpy()
+                    img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
+                    metadata = None
+                    if not args.disable_metadata:
+                        metadata = PngInfo()
+                        if prompt is not None:
+                            metadata.add_text("prompt", json.dumps(prompt))
+                        if extra_pnginfo is not None:
+                            for x in extra_pnginfo:
+                                metadata.add_text(x, json.dumps(extra_pnginfo[x]))
+                    
+                    if args.output == "-":
+                        img.save(sys.stdout.buffer, format="png", pnginfo=metadata, compress_level=self.compress_level)
+                    else:
+                        subfolder = ""
+                        if len(images) == 1:
+                            if os.path.isdir(args.output):
+                                subfolder = args.output
+                                file = "output.png"
+                            else:
+                                subfolder, file = os.path.split(args.output)
+                                if subfolder == "":
+                                    subfolder = os.getcwd()
+                        else:
+                            if os.path.isdir(args.output):
+                                subfolder = args.output
+                                file = "output"
+                            elif os.pathsep in args.output:
+                                subfolder, file = os.path.split(args.output)
+                            else:
+                                file = args.output
+                            if subfolder == "":
+                                subfolder = os.getcwd()
+                            
+                            files = os.listdir(subfolder)
+                            file_pattern = file
+                            while True:
+                                filename_with_batch_num = file_pattern.replace("%batch_num%", str(batch_number))
+                                file = f"{filename_with_batch_num}_{self.counter:05}_.png"
+                                self.counter += 1
+
+                                if file not in files:
+                                    break
+                        
+                        img.save(os.path.join(subfolder, file), pnginfo=metadata, compress_level=self.compress_level)
+                        results.append({
+                            "filename": file,
+                            "subfolder": subfolder,
+                            "type": self.type
+                        })
+
+                return {"ui": {"images": results}}
+    
+    return WrappedSaveImage
