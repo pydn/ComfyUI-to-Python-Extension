@@ -4,7 +4,7 @@ I plan to do some fresh install testing when I have time.
 
 ## ComfyUI-SaveAsScript
 
-This is a fork maintained by Anthony Maranto of the original [ComfyUI-To-Python-Extension](https://github.com/pydn/ComfyUI-to-Python-Extension) by Peyton DeNiro. It provides a more robust command-line interface and the ability to export your current workflow as a script directly from the ComfyUI web interface.
+ComfyUI-SaveAsScript (or SaS) is a fork of [ComfyUI-To-Python-Extension](https://github.com/pydn/ComfyUI-to-Python-Extension). It provides a more robust command-line interface and the ability to export your current workflow as a script directly from a button on the ComfyUI web interface.
 
 Once exported, this script can be run to run the workflow without a frontend, or it can be imported and the `main()` function can be used to call the workflow programatically.
 
