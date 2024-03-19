@@ -6,6 +6,31 @@ I plan to do some fresh install testing when I have time.
 
 This is a fork maintained by Anthony Maranto of the original [ComfyUI-To-Python-Extension](https://github.com/pydn/ComfyUI-to-Python-Extension) by Peyton DeNiro. It provides a more robust command-line interface and the ability to export your current workflow as a script directly from the ComfyUI web interface.
 
+Once exported, this script can be run to run the workflow without a frontend, or it can be imported and the `main()` function can be used to call the workflow programatically.
+
+### New Feauture: Module Support
+
+Now, scripts exported with SaS can be imported as modules! Once you have a script exported, you can use it like:
+```python
+>>> import exported_script
+>>> results = exported_script.main("A prompt that would be sent to the command-line arguments", queue_size=1)
+```
+
+The first `SaveImage` node reached will instead *return* the output to the calling function. 
+
+### New Feature: Custom Output Path
+
+When running the exported script normally, you can now specify an `--output` option that will override the default path of `SaveImage` nodes.
+If only a single image is exported by the node, then the path will be used verbatim. Otherwise, the path will be used as a prefix, and `_#####.png` will be appended
+to ensure uniqueness. Note that files *will be clobbered* if only one image is exported.
+If the path is a directory, the `SaveImage` node's `filename_prefix` will be used.
+
+If `-` is selected as the output path, normal ComfyUI output will be piped to stderr and the resultant image will be piped to stdout, allowing one to use the script
+like:
+```bash
+python3 script.py "A painting of outer space" --output - --queue-size 1 > image.png
+```
+
 ### Usage (Web)
 
 Upon installation, there will be a button labeled "Save as Script" on the interface, pictured below:
@@ -58,18 +83,33 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --queue-size QUEUE_SIZE, -q QUEUE_SIZE
-                        How many times the workflow will be executed (default: 10)
+                        How many times the workflow will be executed (default: 1)
   --comfyui-directory COMFYUI_DIRECTORY, -c COMFYUI_DIRECTORY
                         Where to look for ComfyUI (default: current directory)
+  --output OUTPUT, -o OUTPUT
+                        The location to save the output image. Either a file path, a directory, or - for stdout (default: the ComfyUI output directory)
+  --disable-metadata    Disables writing workflow metadata to the outputs
 ```
 
 Arguments are new. **If you have any suggestions on how to improve them or on how to effectively specify defaults in the workflow and override in the command-line**, feel free to suggest that in an Issue.
+
+#### Passing Arguments to ComfyUI
+
+In case you want to pass anything to the ComfyUI server as an argument, you can use `--` to indicate you're done with SaS arguments and are now passing ComfyUI arguments.
+For instance:
+
+```bash
+python3 script.py "A painting of outer space" --queue-size 1 -- --cpu
+```
 
 ### Other Changes
 
 #### Bugfixes
 - Windows paths are now properly escaped.
 - I also fixed what seemed to be a minor bug with exporting certain Crystools nodes, possibly due to their unusual name.
+
+#### TODO
+- Improve compatibility with module API
 
 ## Old Description of ComfyUI-to-Python-Extension (usage altered)
 

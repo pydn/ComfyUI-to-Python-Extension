@@ -106,14 +106,17 @@ def get_value_at_index(obj: Union[Sequence, Mapping], index: int) -> Any:
     except KeyError:
         return obj['result'][index]
 
-def parse_arg(s: str):
+def parse_arg(s: Any):
     """ Parses a JSON string, returning it unchanged if the parsing fails. """
+    if __name__ == "__main__" or not isinstance(s, str):
+        return s
+    
     try:
         return json.loads(s)
     except json.JSONDecodeError:
         return s
 
-def save_image_wrapper(cls):
+def save_image_wrapper(context, cls):
     if args.output is None: return cls
     
     from PIL import Image, ImageOps, ImageSequence
@@ -146,7 +149,14 @@ def save_image_wrapper(cls):
                                 metadata.add_text(x, json.dumps(extra_pnginfo[x]))
                     
                     if args.output == "-":
-                        img.save(sys.stdout.buffer, format="png", pnginfo=metadata, compress_level=self.compress_level)
+                        # Hack to briefly restore stdout
+                        if context is not None:
+                            context.__exit__(None, None, None) 
+                        try:
+                            img.save(sys.stdout.buffer, format="png", pnginfo=metadata, compress_level=self.compress_level)
+                        finally:
+                            if context is not None:
+                                context.__enter__()
                     else:
                         subfolder = ""
                         if len(images) == 1:
@@ -160,7 +170,7 @@ def save_image_wrapper(cls):
                         else:
                             if os.path.isdir(args.output):
                                 subfolder = args.output
-                                file = "output"
+                                file = filename_prefix
                             else:
                                 subfolder, file = os.path.split(args.output)
                             
@@ -171,7 +181,7 @@ def save_image_wrapper(cls):
                             file_pattern = file
                             while True:
                                 filename_with_batch_num = file_pattern.replace("%batch_num%", str(batch_number))
-                                file = f"{filename_with_batch_num}_{self.counter:05}_.png"
+                                file = f"{filename_with_batch_num}_{self.counter:05}.png"
                                 self.counter += 1
 
                                 if file not in files:
