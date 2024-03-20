@@ -65,6 +65,11 @@ def add_comfyui_directory_to_sys_path() -> None:
     comfyui_path = find_path('ComfyUI')
     if comfyui_path is not None and os.path.isdir(comfyui_path):
         sys.path.append(comfyui_path)
+        import __main__
+
+        if getattr(__main__, "__file__", None) is None:
+            __main__.__file__ = os.path.join(comfyui_path, "main.py")
+        
         print(f"'{comfyui_path}' added to sys.path")
 
 
