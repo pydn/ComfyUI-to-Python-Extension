@@ -166,7 +166,7 @@ class CodeGenerator:
         base_node_class_mappings (Dict): Base mappings of node classes.
     """
 
-    def __init__(self, node_class_mappings: Dict, base_node_class_mappings: Dict):
+    def __init__(self, node_class_mappings: Dict, base_node_class_mappings: Dict, prompt: Dict):
         """Initialize the CodeGenerator with given node class mappings.
 
         Args:
@@ -175,6 +175,7 @@ class CodeGenerator:
         """
         self.node_class_mappings = node_class_mappings
         self.base_node_class_mappings = base_node_class_mappings
+        self.prompt = prompt
     
     def can_be_imported(self, import_name: str):
         if import_name in self.base_node_class_mappings.keys():
@@ -195,6 +196,7 @@ class CodeGenerator:
         Returns:
             str: Generated execution code as a string.
         """
+        include_prompt_data = False
         # Create the necessary data structures to hold imports and generated code
         import_statements, executed_variables, arg_inputs, special_functions_code, code = set(['NODE_CLASS_MAPPINGS']), {}, [], [], []
         # This dictionary will store the names of the objects that we have already initialized
@@ -206,8 +208,9 @@ class CodeGenerator:
             # Generate class definition and inputs from the data
             inputs, class_type = data['inputs'], data['class_type']
 
+            input_types = self.node_class_mappings[class_type].INPUT_TYPES()
             missing = []
-            for i, input in enumerate(self.node_class_mappings[class_type].INPUT_TYPES().get("required", {}).keys()):
+            for i, input in enumerate(input_types.get("required", {}).keys()):
                 if input not in inputs:
                     input_var = f"{input}{len(arg_inputs)+1}"
                     arg_inputs.append((input_var, f"Argument {i}, input `{input}` for node \\\"{data['_meta'].get('title', class_type)}\\\" id {idx}"))
@@ -233,14 +236,18 @@ class CodeGenerator:
 
             # Get all possible parameters for class_def
             class_def_params = self.get_function_parameters(getattr(class_def, class_def.FUNCTION))
+            no_params = class_def_params is None
 
             # Remove any keyword arguments from **inputs if they are not in class_def_params
-            inputs = {key: value for key, value in inputs.items() if key in class_def_params}
+            inputs = {key: value for key, value in inputs.items() if no_params or key in class_def_params}
             for input, input_var, arg in missing:
                 inputs[input] = {"variable_name": f"parse_arg(args." + input_var + ")"}
             # Deal with hidden variables
-            if 'unique_id' in class_def_params:
+            if no_params or 'unique_id' in class_def_params:
                 inputs['unique_id'] = random.randint(1, 2**64)
+            if no_params or 'prompt' in class_def_params:
+                inputs["prompt"] = {"variable_name": "PROMPT_DATA"}
+                include_prompt_data = True
 
             # Create executed variable and generate code
             executed_variables[idx] = f'{self.clean_variable_name(class_type)}_{idx}'
@@ -261,7 +268,7 @@ class CodeGenerator:
                     code.append(self.create_function_call_code(initialized_objects[class_type], class_def.FUNCTION, executed_variables[idx], is_special_function, **inputs))
 
         # Generate final code by combining imports and code, and wrap them in a main function
-        final_code = self.assemble_python_code(import_statements, special_functions_code, arg_inputs, code, queue_size, custom_nodes)
+        final_code = self.assemble_python_code(import_statements, special_functions_code, arg_inputs, code, queue_size, custom_nodes, include_prompt_data)
 
         return final_code
 
@@ -304,7 +311,7 @@ class CodeGenerator:
             return f'{key}={value["variable_name"]}'
         return f'{key}={value}'
 
-    def assemble_python_code(self, import_statements: set, special_functions_code: List[str], arg_inputs: List[Tuple[str, str]], code: List[str], queue_size: int, custom_nodes=False) -> str:
+    def assemble_python_code(self, import_statements: set, special_functions_code: List[str], arg_inputs: List[Tuple[str, str]], code: List[str], queue_size: int, custom_nodes=False, include_prompt_data=True) -> str:
         """Generates the final code string.
 
         Args:
@@ -349,6 +356,8 @@ else:
         # Define static import statements required for the script
         static_imports = ['import os', 'import random', 'import sys', 'import json', 'import argparse', 'import contextlib', 'from typing import Sequence, Mapping, Any, Union', 
                           'import torch'] + func_strings + argparse_code
+        if include_prompt_data:
+            static_imports.append(f'PROMPT_DATA = json.loads({repr(json.dumps(self.prompt))})')
         # Check if custom nodes should be included
         if custom_nodes:
             static_imports.append(f'\n{inspect.getsource(import_custom_nodes)}\n')
@@ -459,7 +468,8 @@ def main(*func_args, **func_kwargs):
         signature = inspect.signature(func)
         parameters = {name: param.default if param.default != param.empty else None
                     for name, param in signature.parameters.items()}
-        return list(parameters.keys())  
+        catch_all = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values())
+        return list(parameters.keys()) if not catch_all else None
 
     def update_inputs(self, inputs: Dict, executed_variables: Dict) -> Dict:
         """Update inputs based on the executed variables.
@@ -542,7 +552,7 @@ class ComfyUItoPython:
         load_order = load_order_determiner.determine_load_order()
 
         # Step 4: Generate the workflow code
-        code_generator = CodeGenerator(self.node_class_mappings, self.base_node_class_mappings)
+        code_generator = CodeGenerator(self.node_class_mappings, self.base_node_class_mappings, data)
         generated_code = code_generator.generate_workflow(load_order, queue_size=self.queue_size)
 
         # Step 5: Write the generated code to a file
