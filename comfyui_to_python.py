@@ -243,11 +243,12 @@ class CodeGenerator:
             for input, input_var, arg in missing:
                 inputs[input] = {"variable_name": f"parse_arg(args." + input_var + ")"}
             # Deal with hidden variables
-            if no_params or 'unique_id' in class_def_params:
-                inputs['unique_id'] = random.randint(1, 2**64)
-            if no_params or 'prompt' in class_def_params:
-                inputs["prompt"] = {"variable_name": "PROMPT_DATA"}
-                include_prompt_data = True
+            if class_def_params is not None:
+                if 'unique_id' in class_def_params:
+                    inputs['unique_id'] = random.randint(1, 2**64)
+                if 'prompt' in class_def_params:
+                    inputs["prompt"] = {"variable_name": "PROMPT_DATA"}
+                    include_prompt_data = True
 
             # Create executed variable and generate code
             executed_variables[idx] = f'{self.clean_variable_name(class_type)}_{idx}'
