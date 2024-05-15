@@ -339,7 +339,7 @@ class CodeGenerator:
         argparse_code.append(f'parser.add_argument("--disable-metadata", action="store_true", help="Disables writing workflow metadata to the outputs")\n')
         argparse_code.append('''
 comfy_args = [sys.argv[0]]
-if "--" in sys.argv:
+if __name__ == "__main__" and "--" in sys.argv:
     idx = sys.argv.index("--")
     comfy_args += sys.argv[idx+1:]
     sys.argv = sys.argv[:idx]
