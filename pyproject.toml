@@ -1,0 +1,15 @@
+[project]
+name = "comfyui-to-python-extension"
+description = ""
+version = "1.0.0"
+license = "LICENSE"
+dependencies = ["torch", "torchdiffeq", "torchsde", "einops", "transformers>=4.25.1", "safetensors>=0.3.0", "aiohttp", "accelerate", "pyyaml", "Pillow", "scipy", "tqdm", "black"]
+
+[project.urls]
+Repository = "https://github.com/pydn/ComfyUI-to-Python-Extension"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "ComfyUI-to-Python-Extension"
+Icon = ""
