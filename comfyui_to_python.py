@@ -213,7 +213,7 @@ class CodeGenerator:
             for i, input in enumerate(input_types.get("required", {}).keys()):
                 if input not in inputs:
                     input_var = f"{input}{len(arg_inputs)+1}"
-                    arg_inputs.append((input_var, f"Argument {i}, input `{input}` for node \\\"{data['_meta'].get('title', class_type)}\\\" id {idx}"))
+                    arg_inputs.append((input_var, f"Argument {i}, input `{input}` for node \\\"{data.get('_meta', {}).get('title', class_type)}\\\" id {idx}"))
                     print("WARNING: Missing required input", input, "for", class_type)
                     print("That will be CLI arg " + str(len(arg_inputs)))
                     missing.append((input, input_var, len(arg_inputs)))
