@@ -1,0 +1,158 @@
+{
+  "1": {
+    "inputs": {
+      "model_name": "sam_hq_vit_h (2.57GB)"
+    },
+    "class_type": "SAMModelLoader (segment anything)",
+    "_meta": {
+      "title": "SAMModelLoader (segment anything)"
+    }
+  },
+  "2": {
+    "inputs": {
+      "model_name": "GroundingDINO_SwinT_OGC (694MB)"
+    },
+    "class_type": "GroundingDinoModelLoader (segment anything)",
+    "_meta": {
+      "title": "GroundingDinoModelLoader (segment anything)"
+    }
+  },
+  "3": {
+    "inputs": {
+      "prompt": "girl",
+      "threshold": 0.3,
+      "sam_model": [
+        "1",
+        0
+      ],
+      "grounding_dino_model": [
+        "2",
+        0
+      ],
+      "image": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "GroundingDinoSAMSegment (segment anything)",
+    "_meta": {
+      "title": "GroundingDinoSAMSegment (segment anything)"
+    }
+  },
+  "4": {
+    "inputs": {
+      "images": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "5": {
+    "inputs": {
+      "mask": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "MaskToImage",
+    "_meta": {
+      "title": "Convert Mask to Image"
+    }
+  },
+  "6": {
+    "inputs": {
+      "images": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "7": {
+    "inputs": {
+      "images": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "Preview Image"
+    }
+  },
+  "8": {
+    "inputs": {
+      "model_name": "vitmatte_small (103 MB)"
+    },
+    "class_type": "MattingModelLoader",
+    "_meta": {
+      "title": "Load Matting Model"
+    }
+  },
+  "9": {
+    "inputs": {
+      "matting_model": [
+        "8",
+        0
+      ],
+      "matting_preprocessor": [
+        "8",
+        1
+      ],
+      "image": [
+        "12",
+        0
+      ],
+      "trimap": [
+        "11",
+        0
+      ]
+    },
+    "class_type": "ApplyMatting",
+    "_meta": {
+      "title": "Apply Matting"
+    }
+  },
+  "10": {
+    "inputs": {
+      "mask": [
+        "9",
+        1
+      ]
+    },
+    "class_type": "MaskToImage",
+    "_meta": {
+      "title": "Convert Mask to Image"
+    }
+  },
+  "11": {
+    "inputs": {
+      "kernel_size": 20.86,
+      "mask": [
+        "3",
+        1
+      ]
+    },
+    "class_type": "CreateTrimap",
+    "_meta": {
+      "title": "Create Trimap"
+    }
+  },
+  "12": {
+    "inputs": {
+      "image": "IMG_1956.JPG",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image"
+    }
+  }
+}

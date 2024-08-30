@@ -1,0 +1,1056 @@
+{
+  "last_node_id": 58,
+  "last_link_id": 59,
+  "nodes": [
+    {
+      "id": 5,
+      "type": "EmptyLatentImage",
+      "pos": [
+        485,
+        803
+      ],
+      "size": {
+        "0": 315,
+        "1": 106
+      },
+      "flags": {},
+      "order": 0,
+      "mode": 2,
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            2
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "EmptyLatentImage"
+      },
+      "widgets_values": [
+        512,
+        768,
+        1
+      ]
+    },
+    {
+      "id": 13,
+      "type": "LoadText2PromptModel",
+      "pos": [
+        -569.5084608154301,
+        -769.8625924224857
+      ],
+      "size": {
+        "0": 315,
+        "1": 106
+      },
+      "flags": {
+        "collapsed": false
+      },
+      "order": 1,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "TEXT2PROMPT_MODEL",
+          "type": "TEXT2PROMPT_MODEL",
+          "links": [
+            11
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadText2PromptModel"
+      },
+      "widgets_values": [
+        "Qwen/Qwen1.5-0.5B-Chat",
+        "cuda",
+        true
+      ]
+    },
+    {
+      "id": 50,
+      "type": "TextBox|fofo",
+      "pos": [
+        -72.89598327636722,
+        -375.8880020904541
+      ],
+      "size": {
+        "0": 400,
+        "1": 200
+      },
+      "flags": {},
+      "order": 2,
+      "mode": 2,
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            48
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TextBox|fofo"
+      },
+      "widgets_values": [
+        "A small ship sails through the vast blue expanse of the ocean, its sails billowing with the wind as it navigates through the vast expanse of the sky. In the distance, a larus flutters across the water, its wings spread wide and powerful, and it glides effortlessly through the air. The stars twinkle overhead, casting long shadows on the water, creating a mesmerizing display of light and color. As the ship approaches the shore, it is illuminated by the stars, making it seem like it's floating in a dreamy world."
+      ]
+    },
+    {
+      "id": 46,
+      "type": "CLIPTextEncode",
+      "pos": [
+        510.1040167236328,
+        244.111997909546
+      ],
+      "size": {
+        "0": 355.5054626464844,
+        "1": 57.71168899536133
+      },
+      "flags": {},
+      "order": 12,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 43,
+          "slot_index": 0
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "link": 48,
+          "widget": {
+            "name": "text"
+          },
+          "slot_index": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            38
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "A small ship sails through the vast blue expanse of the ocean, its sails billowing with the wind as it navigates through the vast expanse of the sky. In the distance, a larus flutters across the water, its wings spread wide and powerful, and it glides effortlessly through the air. The stars twinkle overhead, casting long shadows on the water, creating a mesmerizing display of light and color. As the ship approaches the shore, it is illuminated by the stars, making it seem like it's floating in a dreamy world."
+      ]
+    },
+    {
+      "id": 47,
+      "type": "VAELoader",
+      "pos": [
+        577.1040167236331,
+        107.11199790954595
+      ],
+      "size": {
+        "0": 315,
+        "1": 58
+      },
+      "flags": {},
+      "order": 3,
+      "mode": 2,
+      "outputs": [
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": [
+            40
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAELoader"
+      },
+      "widgets_values": [
+        "vaeFtMse840000EmaPruned_vae.safetensors"
+      ]
+    },
+    {
+      "id": 44,
+      "type": "UpscaleModelLoader",
+      "pos": [
+        951,
+        776
+      ],
+      "size": {
+        "0": 315,
+        "1": 58
+      },
+      "flags": {},
+      "order": 4,
+      "mode": 2,
+      "outputs": [
+        {
+          "name": "UPSCALE_MODEL",
+          "type": "UPSCALE_MODEL",
+          "links": [
+            34
+          ],
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UpscaleModelLoader"
+      },
+      "widgets_values": [
+        "4x-AnimeSharp.pth"
+      ]
+    },
+    {
+      "id": 34,
+      "type": "PreviewImage",
+      "pos": [
+        1461,
+        287
+      ],
+      "size": {
+        "0": 210,
+        "1": 246
+      },
+      "flags": {},
+      "order": 18,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 24
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      }
+    },
+    {
+      "id": 45,
+      "type": "PreviewImage",
+      "pos": [
+        1716,
+        285
+      ],
+      "size": {
+        "0": 210,
+        "1": 246
+      },
+      "flags": {},
+      "order": 20,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 35
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      }
+    },
+    {
+      "id": 3,
+      "type": "KSampler",
+      "pos": [
+        895,
+        374
+      ],
+      "size": {
+        "0": 315,
+        "1": 262
+      },
+      "flags": {},
+      "order": 16,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 41,
+          "slot_index": 0
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 38
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 6
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "links": [
+            7
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "KSampler"
+      },
+      "widgets_values": [
+        1023268540963448,
+        "randomize",
+        30,
+        8,
+        "dpm_adaptive",
+        "karras",
+        0.9500000000000001
+      ]
+    },
+    {
+      "id": 8,
+      "type": "VAEDecode",
+      "pos": [
+        1211,
+        243
+      ],
+      "size": {
+        "0": 210,
+        "1": 46
+      },
+      "flags": {},
+      "order": 17,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 7
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 40
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            24,
+            33
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VAEDecode"
+      }
+    },
+    {
+      "id": 42,
+      "type": "ImageUpscaleWithModel",
+      "pos": [
+        1332,
+        709
+      ],
+      "size": {
+        "0": 241.79998779296875,
+        "1": 46
+      },
+      "flags": {},
+      "order": 19,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "upscale_model",
+          "type": "UPSCALE_MODEL",
+          "link": 34,
+          "slot_index": 0
+        },
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 33
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            35,
+            36
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageUpscaleWithModel"
+      }
+    },
+    {
+      "id": 55,
+      "type": "PreviewImage",
+      "pos": [
+        1625.3261180229483,
+        1166.614138501562
+      ],
+      "size": {
+        "0": 210,
+        "1": 246
+      },
+      "flags": {},
+      "order": 15,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 52
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      }
+    },
+    {
+      "id": 53,
+      "type": "ImageUpscaleWithModel",
+      "pos": [
+        1209.2052320976563,
+        1339.6923758062496
+      ],
+      "size": {
+        "0": 241.79998779296875,
+        "1": 46
+      },
+      "flags": {},
+      "order": 10,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "upscale_model",
+          "type": "UPSCALE_MODEL",
+          "link": 50,
+          "slot_index": 0
+        },
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 59
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            49,
+            52
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageUpscaleWithModel"
+      }
+    },
+    {
+      "id": 54,
+      "type": "UpscaleModelLoader",
+      "pos": [
+        815.2052320976561,
+        1227.6923758062496
+      ],
+      "size": {
+        "0": 315,
+        "1": 58
+      },
+      "flags": {},
+      "order": 5,
+      "mode": 2,
+      "outputs": [
+        {
+          "name": "UPSCALE_MODEL",
+          "type": "UPSCALE_MODEL",
+          "links": [
+            50
+          ],
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UpscaleModelLoader"
+      },
+      "widgets_values": [
+        "4x-AnimeSharp.pth"
+      ]
+    },
+    {
+      "id": 9,
+      "type": "SaveImage",
+      "pos": [
+        1705,
+        606
+      ],
+      "size": {
+        "0": 210,
+        "1": 270
+      },
+      "flags": {},
+      "order": 21,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 36,
+          "slot_index": 0
+        }
+      ],
+      "properties": {},
+      "widgets_values": [
+        "ComfyUI"
+      ]
+    },
+    {
+      "id": 52,
+      "type": "SaveImage",
+      "pos": [
+        1651.2052320976563,
+        1473.6923758062496
+      ],
+      "size": {
+        "0": 210,
+        "1": 270
+      },
+      "flags": {},
+      "order": 14,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 49,
+          "slot_index": 0
+        }
+      ],
+      "properties": {},
+      "widgets_values": [
+        "ComfyUI"
+      ]
+    },
+    {
+      "id": 48,
+      "type": "LoraLoader",
+      "pos": [
+        110,
+        378
+      ],
+      "size": {
+        "0": 315,
+        "1": 126
+      },
+      "flags": {},
+      "order": 9,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 45
+        },
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 46
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            41
+          ],
+          "shape": 3,
+          "slot_index": 0
+        },
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            43,
+            44
+          ],
+          "shape": 3,
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoraLoader"
+      },
+      "widgets_values": [
+        "宫崎骏漫画场景_宫崎骏画风场景1.0.safetensors",
+        1,
+        1
+      ]
+    },
+    {
+      "id": 49,
+      "type": "CheckpointLoaderSimple",
+      "pos": [
+        -250,
+        197
+      ],
+      "size": {
+        "0": 315,
+        "1": 98
+      },
+      "flags": {},
+      "order": 6,
+      "mode": 2,
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "links": [
+            45
+          ],
+          "shape": 3,
+          "slot_index": 0
+        },
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": [
+            46
+          ],
+          "shape": 3,
+          "slot_index": 1
+        },
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CheckpointLoaderSimple"
+      },
+      "widgets_values": [
+        "v1-5-pruned-emaonly.safetensors"
+      ]
+    },
+    {
+      "id": 7,
+      "type": "CLIPTextEncode",
+      "pos": [
+        420,
+        549
+      ],
+      "size": {
+        "0": 425.27801513671875,
+        "1": 180.6060791015625
+      },
+      "flags": {},
+      "order": 13,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 44
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "links": [
+            6
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "ng_deepnegative_v1_75t,(badhandv4:1.2),EasyNegative,(worst quality:2),"
+      ]
+    },
+    {
+      "id": 56,
+      "type": "LoadImage",
+      "pos": [
+        844,
+        1476
+      ],
+      "size": {
+        "0": 315,
+        "1": 314
+      },
+      "flags": {},
+      "order": 7,
+      "mode": 2,
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            59
+          ],
+          "shape": 3,
+          "slot_index": 0
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "微信图片_20240714174743.png",
+        "image"
+      ]
+    },
+    {
+      "id": 14,
+      "type": "Text2Prompt",
+      "pos": [
+        -185,
+        -773
+      ],
+      "size": {
+        "0": 400,
+        "1": 246
+      },
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "TEXT2PROMPT_MODEL",
+          "link": 11
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            16
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "Text2Prompt"
+      },
+      "widgets_values": [
+        "Exquisite,many details,night scene,dream,moon,meteor,far away",
+        128,
+        0.2,
+        "disable",
+        "NO",
+        "must be in english and describe a picture according to follow the description below within 77 words: ",
+        "You are a helpful assistant."
+      ]
+    },
+    {
+      "id": 18,
+      "type": "ShowText|fofo",
+      "pos": [
+        270,
+        -695
+      ],
+      "size": {
+        "0": 315,
+        "1": 76
+      },
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "text",
+          "type": "STRING",
+          "link": 16,
+          "widget": {
+            "name": "text"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [],
+          "shape": 6,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ShowText|fofo"
+      },
+      "widgets_values": [
+        "",
+        "A beautiful sunset over a vast expanse of sky, with many intricate details such as stars, craters, and clouds. The moon is far away, casting a soft glow across the landscape. The sky is a deep shade of purple, with black clouds forming on either side. The image captures the beauty and wonder of nature at its most stunning moment."
+      ]
+    }
+  ],
+  "links": [
+    [
+      2,
+      5,
+      0,
+      3,
+      3,
+      "LATENT"
+    ],
+    [
+      6,
+      7,
+      0,
+      3,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      7,
+      3,
+      0,
+      8,
+      0,
+      "LATENT"
+    ],
+    [
+      11,
+      13,
+      0,
+      14,
+      0,
+      "TEXT2PROMPT_MODEL"
+    ],
+    [
+      16,
+      14,
+      0,
+      18,
+      0,
+      "STRING"
+    ],
+    [
+      24,
+      8,
+      0,
+      34,
+      0,
+      "IMAGE"
+    ],
+    [
+      33,
+      8,
+      0,
+      42,
+      1,
+      "IMAGE"
+    ],
+    [
+      34,
+      44,
+      0,
+      42,
+      0,
+      "UPSCALE_MODEL"
+    ],
+    [
+      35,
+      42,
+      0,
+      45,
+      0,
+      "IMAGE"
+    ],
+    [
+      36,
+      42,
+      0,
+      9,
+      0,
+      "IMAGE"
+    ],
+    [
+      38,
+      46,
+      0,
+      3,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      40,
+      47,
+      0,
+      8,
+      1,
+      "VAE"
+    ],
+    [
+      41,
+      48,
+      0,
+      3,
+      0,
+      "MODEL"
+    ],
+    [
+      43,
+      48,
+      1,
+      46,
+      0,
+      "CLIP"
+    ],
+    [
+      44,
+      48,
+      1,
+      7,
+      0,
+      "CLIP"
+    ],
+    [
+      45,
+      49,
+      0,
+      48,
+      0,
+      "MODEL"
+    ],
+    [
+      46,
+      49,
+      1,
+      48,
+      1,
+      "CLIP"
+    ],
+    [
+      48,
+      50,
+      0,
+      46,
+      1,
+      "STRING"
+    ],
+    [
+      49,
+      53,
+      0,
+      52,
+      0,
+      "IMAGE"
+    ],
+    [
+      50,
+      54,
+      0,
+      53,
+      0,
+      "UPSCALE_MODEL"
+    ],
+    [
+      52,
+      53,
+      0,
+      55,
+      0,
+      "IMAGE"
+    ],
+    [
+      59,
+      56,
+      0,
+      53,
+      1,
+      "IMAGE"
+    ]
+  ],
+  "groups": [
+    {
+      "title": "Group",
+      "bounding": [
+        -575,
+        -936,
+        1197,
+        458
+      ],
+      "color": "#3f789e",
+      "font_size": 24
+    },
+    {
+      "title": "Group",
+      "bounding": [
+        -278,
+        -451,
+        2175,
+        1363
+      ],
+      "color": "#3f789e",
+      "font_size": 24
+    },
+    {
+      "title": "Group",
+      "bounding": [
+        784,
+        1065,
+        1105,
+        717
+      ],
+      "color": "#3f789e",
+      "font_size": 24
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1.3310000000000006,
+      "offset": {
+        "0": -614.260986328125,
+        "1": -1347.4464111328125
+      }
+    }
+  },
+  "version": 0.4
+}

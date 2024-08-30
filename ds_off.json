@@ -1,0 +1,44 @@
+{
+  "13": {
+    "inputs": {
+      "model": "Qwen/Qwen1.5-0.5B-Chat",
+      "device": "cuda",
+      "low_memory": true
+    },
+    "class_type": "LoadText2PromptModel",
+    "_meta": {
+      "title": "Loader Text to Prompt Model 🐼"
+    }
+  },
+  "14": {
+    "inputs": {
+      "prompt": "Exquisite,many details,night scene,dream,moon,meteor,far away",
+      "max_tokens": 128,
+      "temperature": 0.2,
+      "print_output": "disable",
+      "cached": "NO",
+      "prefix": "must be in english and describe a picture according to follow the description below within 77 words: ",
+      "system_prompt": "You are a helpful assistant.",
+      "model": [
+        "13",
+        0
+      ]
+    },
+    "class_type": "Text2Prompt",
+    "_meta": {
+      "title": "Text to Prompt 🐼"
+    }
+  },
+  "18": {
+    "inputs": {
+      "text": [
+        "14",
+        0
+      ]
+    },
+    "class_type": "ShowText|fofo",
+    "_meta": {
+      "title": "Show Text 🐼"
+    }
+  }
+}

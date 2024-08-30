@@ -40,7 +40,7 @@ class FileHandler:
         """
 
         try:
-            with open(file_path, 'r') as file:
+            with open(file_path, 'r', encoding='utf-8') as file:
                 data = json.load(file)
             return data
 
@@ -452,9 +452,9 @@ class ComfyUItoPython:
 
 if __name__ == '__main__':
     # Update class parameters here
-    input_file = 'workflow_api.json'
-    output_file = 'workflow_api.py'
-    queue_size = 10
+    input_file = 'image_text_matting_api.json'
+    output_file = 'image_text_matting_api.py'
+    queue_size = 1
 
     # Convert ComfyUI workflow to Python
     ComfyUItoPython(input_file=input_file, output_file=output_file, queue_size=queue_size)
