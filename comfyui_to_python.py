@@ -11,7 +11,7 @@ from typing import Dict, List, Any, Callable, Tuple
 import black
 
 
-from common import (
+from comfyui_to_python_utils import (
     import_custom_nodes,
     find_path,
     add_comfyui_directory_to_sys_path,
