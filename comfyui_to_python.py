@@ -26,7 +26,7 @@ from nodes import NODE_CLASS_MAPPINGS
 
 DEFAULT_INPUT_FILE = "workflow_api.json"
 DEFAULT_OUTPUT_FILE = "workflow_api.py"
-DEFAULT_QUEUE_SIZE = 1
+DEFAULT_QUEUE_SIZE = 10
 
 
 class FileHandler:
