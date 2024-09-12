@@ -6,7 +6,8 @@ import os
 import random
 import sys
 import re
-from typing import Dict, List, Any, Callable, Tuple
+from typing import Dict, List, Callable, Tuple
+from argparse import ArgumentParser
 
 import black
 
@@ -21,6 +22,11 @@ from comfyui_to_python_utils import (
 
 sys.path.append("../")
 from nodes import NODE_CLASS_MAPPINGS
+
+
+DEFAULT_INPUT_FILE = "workflow_api.json"
+DEFAULT_OUTPUT_FILE = "workflow_api.py"
+DEFAULT_QUEUE_SIZE = 1
 
 
 class FileHandler:
@@ -224,7 +230,6 @@ class CodeGenerator:
         custom_nodes = False
         # Loop over each dictionary in the load order list
         for idx, data, is_special_function in load_order:
-
             # Generate class definition and inputs from the data
             inputs, class_type = data["inputs"], data["class_type"]
             class_def = self.node_class_mappings[class_type]()
@@ -552,13 +557,57 @@ class ComfyUItoPython:
         print(f"Code successfully generated and written to {self.output_file}")
 
 
-if __name__ == "__main__":
-    # Update class parameters here
-    input_file = "workflow_api.json"
-    output_file = "workflow_api.py"
-    queue_size = 10
+def run(
+    input_file: str = DEFAULT_INPUT_FILE,
+    output_file: str = DEFAULT_OUTPUT_FILE,
+    queue_size: int = DEFAULT_QUEUE_SIZE,
+) -> None:
+    """Generate Python code from a ComfyUI workflow_api.json file.
 
-    # Convert ComfyUI workflow to Python
-    ComfyUItoPython(
-        input_file=input_file, output_file=output_file, queue_size=queue_size
+    Args:
+        input_file (str): Path to the input JSON file. Defaults to "workflow_api.json".
+        output_file (str): Path to the output Python file.
+            Defaults to "workflow_api.py".
+        queue_size (int): The number of times a workflow will be executed by the script.
+            Defaults to 1.
+
+    Returns:
+        None
+    """
+    ComfyUItoPython(input_file, output_file, queue_size)
+
+
+def main() -> None:
+    """Main function to generate Python code from a ComfyUI workflow_api.json file."""
+    parser = ArgumentParser(
+        description="Generate Python    code from a ComfyUI workflow_api.json file."
     )
+    parser.add_argument(
+        "-f",
+        "--input_file",
+        type=str,
+        help="path to the input JSON file",
+        default=DEFAULT_INPUT_FILE,
+    )
+    parser.add_argument(
+        "-o",
+        "--output_file",
+        type=str,
+        help="path to the output Python file",
+        default=DEFAULT_OUTPUT_FILE,
+    )
+    parser.add_argument(
+        "-q",
+        "--queue_size",
+        type=int,
+        help="number of times the workflow will be executed by default",
+        default=DEFAULT_QUEUE_SIZE,
+    )
+    pargs = parser.parse_args()
+    ComfyUItoPython(**vars(pargs))
+    print("Done.")
+
+
+if __name__ == "__main__":
+    """Run the main function."""
+    main()
