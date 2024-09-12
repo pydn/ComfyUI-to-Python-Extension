@@ -254,14 +254,18 @@ class CodeGenerator:
             class_def_params = self.get_function_parameters(
                 getattr(class_def, class_def.FUNCTION)
             )
+            no_params = class_def_params is None
 
             # Remove any keyword arguments from **inputs if they are not in class_def_params
             inputs = {
-                key: value for key, value in inputs.items() if key in class_def_params
+                key: value
+                for key, value in inputs.items()
+                if no_params or key in class_def_params
             }
             # Deal with hidden variables
-            if "unique_id" in class_def_params:
-                inputs["unique_id"] = random.randint(1, 2**64)
+            if class_def_params is not None:
+                if "unique_id" in class_def_params:
+                    inputs["unique_id"] = random.randint(1, 2**64)
 
             # Create executed variable and generate code
             executed_variables[idx] = f"{self.clean_variable_name(class_type)}_{idx}"
@@ -471,7 +475,11 @@ class CodeGenerator:
             name: param.default if param.default != param.empty else None
             for name, param in signature.parameters.items()
         }
-        return list(parameters.keys())
+        catch_all = any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in signature.parameters.values()
+        )
+        return list(parameters.keys()) if not catch_all else None
 
     def update_inputs(self, inputs: Dict, executed_variables: Dict) -> Dict:
         """Update inputs based on the executed variables.
