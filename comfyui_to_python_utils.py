@@ -2,8 +2,6 @@ import os
 from typing import Sequence, Mapping, Any, Union
 import sys
 
-sys.path.append("../")
-
 
 def import_custom_nodes() -> None:
     """Find all custom nodes in the custom_nodes folder and add those node objects to NODE_CLASS_MAPPINGS

@@ -20,7 +20,7 @@ from comfyui_to_python_utils import (
     get_value_at_index,
 )
 
-sys.path.append("../")
+add_comfyui_directory_to_sys_path()
 from nodes import NODE_CLASS_MAPPINGS
 
 
@@ -617,7 +617,7 @@ def main() -> None:
         default=DEFAULT_QUEUE_SIZE,
     )
     pargs = parser.parse_args()
-    ComfyUItoPython(**vars(pargs))
+    run(**vars(pargs))
     print("Done.")
 
 
