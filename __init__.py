@@ -17,7 +17,10 @@ except ImportError:
     print("Installing...")
 
     import importlib
-    spec = importlib.util.spec_from_file_location('impact_install', os.path.join(os.path.dirname(__file__), 'install.py'))
+
+    spec = importlib.util.spec_from_file_location(
+        "impact_install", os.path.join(os.path.dirname(__file__), "install.py")
+    )
     impact_install = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(impact_install)
 
@@ -35,19 +38,20 @@ import server
 WEB_DIRECTORY = "js"
 NODE_CLASS_MAPPINGS = {}
 
+
 @server.PromptServer.instance.routes.post("/saveasscript")
 async def save_as_script(request):
     try:
         data = await request.json()
-        name = data['name']
-        workflow = data['workflow']
-        
+        name = data["name"]
+        workflow = data["workflow"]
+
         sio = StringIO()
         ComfyUItoPython(workflow=workflow, output_file=sio)
-        
+
         sio.seek(0)
         data = sio.read()
-        
+
         return web.Response(text=data, status=200)
     except Exception as e:
         traceback.print_exc()

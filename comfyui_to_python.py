@@ -7,31 +7,32 @@ import random
 import sys
 import re
 from typing import Dict, List, Any, Callable, Tuple, TextIO
+from argparse import ArgumentParser
 
 import black
 
 
-from comfyui_to_python_utils import import_custom_nodes, find_path, add_comfyui_directory_to_sys_path, add_extra_model_paths,\
-                                    get_value_at_index, parse_arg, save_image_wrapper
-
-PACKAGED_FUNCTIONS = [
-    get_value_at_index,
+from comfyui_to_python_utils import (
+    import_custom_nodes,
     find_path,
     add_comfyui_directory_to_sys_path,
     add_extra_model_paths,
-    import_custom_nodes,
-    save_image_wrapper,
-    parse_arg
-]
+    get_value_at_index,
+)
 
-add_comfyui_directory_to_sys_path()
+sys.path.append("../")
 from nodes import NODE_CLASS_MAPPINGS
-import nodes
+
+
+DEFAULT_INPUT_FILE = "workflow_api.json"
+DEFAULT_OUTPUT_FILE = "workflow_api.py"
+DEFAULT_QUEUE_SIZE = 10
+
 
 class FileHandler:
     """Handles reading and writing files.
 
-    This class provides methods to read JSON data from an input file and write code to an output file (either file-like objects or string paths).
+    This class provides methods to read JSON data from an input file and write code to an output file.
     """
 
     @staticmethod
@@ -50,8 +51,9 @@ class FileHandler:
             ValueError: If the file is not a valid JSON.
         """
 
-        if hasattr(file_path, "read"): return json.load(file_path)
-        with open(file_path, 'r', encoding="utf-8") as file:
+        if hasattr(file_path, "read"):
+            return json.load(file_path)
+        with open(file_path, "r", encoding="utf-8") as file:
             data = json.load(file)
         return data
 
@@ -75,7 +77,7 @@ class FileHandler:
                 os.makedirs(directory)
 
             # Save the code to a .py file
-            with open(file_path, 'w', encoding="utf-8") as file:
+            with open(file_path, "w", encoding="utf-8") as file:
                 file.write(code)
         else:
             file_path.write(code)
@@ -129,7 +131,7 @@ class LoadOrderDeterminer:
         """
         # Mark the node as visited.
         self.visited[key] = True
-        inputs = self.data[key]['inputs']
+        inputs = self.data[key]["inputs"]
         # Loop over each input key.
         for input_key, val in inputs.items():
             # If the value is a list and the first item in the list has not been visited yet,
@@ -147,11 +149,15 @@ class LoadOrderDeterminer:
         """
         # Iterate over each key in the data to check for loader keys.
         for key in self.data:
-            class_def = self.node_class_mappings[self.data[key]['class_type']]()
+            class_def = self.node_class_mappings[self.data[key]["class_type"]]()
             # Check if the class is a loader class or meets specific conditions.
-            if (class_def.CATEGORY == 'loaders' or 
-                class_def.FUNCTION in ['encode'] or 
-                not any(isinstance(val, list) for val in self.data[key]['inputs'].values())):
+            if (
+                class_def.CATEGORY == "loaders"
+                or class_def.FUNCTION in ["encode"]
+                or not any(
+                    isinstance(val, list) for val in self.data[key]["inputs"].values()
+                )
+            ):
                 self.is_special_function = True
                 # If the key has not been visited, perform a DFS from that key.
                 if key not in self.visited:
@@ -166,7 +172,7 @@ class CodeGenerator:
         base_node_class_mappings (Dict): Base mappings of node classes.
     """
 
-    def __init__(self, node_class_mappings: Dict, base_node_class_mappings: Dict, prompt: Dict):
+    def __init__(self, node_class_mappings: Dict, base_node_class_mappings: Dict):
         """Initialize the CodeGenerator with given node class mappings.
 
         Args:
@@ -175,30 +181,28 @@ class CodeGenerator:
         """
         self.node_class_mappings = node_class_mappings
         self.base_node_class_mappings = base_node_class_mappings
-        self.prompt = prompt
-    
-    def can_be_imported(self, import_name: str):
-        if import_name in self.base_node_class_mappings.keys():
-            if getattr(nodes, import_name, None) is not None:
-                return True
-        
-        return False
 
-    def generate_workflow(self, load_order: List, queue_size: int = 1) -> str:
+    def generate_workflow(
+        self,
+        load_order: List,
+        queue_size: int = 10,
+    ) -> str:
         """Generate the execution code based on the load order.
 
         Args:
             load_order (List): A list of tuples representing the load order.
-            filename (str): The name of the Python file to which the code should be saved.
-                Defaults to 'generated_code_workflow.py'.
             queue_size (int): The number of photos that will be created by the script.
 
         Returns:
             str: Generated execution code as a string.
         """
-        include_prompt_data = False
         # Create the necessary data structures to hold imports and generated code
-        import_statements, executed_variables, arg_inputs, special_functions_code, code = set(['NODE_CLASS_MAPPINGS']), {}, [], [], []
+        import_statements, executed_variables, special_functions_code, code = (
+            set(["NODE_CLASS_MAPPINGS"]),
+            {},
+            [],
+            [],
+        )
         # This dictionary will store the names of the objects that we have already initialized
         initialized_objects = {}
 
@@ -206,74 +210,82 @@ class CodeGenerator:
         # Loop over each dictionary in the load order list
         for idx, data, is_special_function in load_order:
             # Generate class definition and inputs from the data
-            inputs, class_type = data['inputs'], data['class_type']
-
-            input_types = self.node_class_mappings[class_type].INPUT_TYPES()
-            missing = []
-            for i, input in enumerate(input_types.get("required", {}).keys()):
-                if input not in inputs:
-                    input_var = f"{input}{len(arg_inputs)+1}"
-                    arg_inputs.append((input_var, f"Argument {i}, input `{input}` for node \\\"{data.get('_meta', {}).get('title', class_type)}\\\" id {idx}"))
-                    print("WARNING: Missing required input", input, "for", class_type)
-                    print("That will be CLI arg " + str(len(arg_inputs)))
-                    missing.append((input, input_var, len(arg_inputs)))
-
+            inputs, class_type = data["inputs"], data["class_type"]
             class_def = self.node_class_mappings[class_type]()
 
             # If the class hasn't been initialized yet, initialize it and generate the import statements
             if class_type not in initialized_objects:
                 # No need to use preview image nodes since we are executing the script in a terminal
-                if class_type == 'PreviewImage':
+                if class_type == "PreviewImage":
                     continue
-                
-                class_type, import_statement, class_code = self.get_class_info(class_type)
+
+                class_type, import_statement, class_code = self.get_class_info(
+                    class_type
+                )
                 initialized_objects[class_type] = self.clean_variable_name(class_type)
-                if self.can_be_imported(class_type):
+                if class_type in self.base_node_class_mappings.keys():
                     import_statements.add(import_statement)
                 if class_type not in self.base_node_class_mappings.keys():
                     custom_nodes = True
                 special_functions_code.append(class_code)
 
             # Get all possible parameters for class_def
-            class_def_params = self.get_function_parameters(getattr(class_def, class_def.FUNCTION))
+            class_def_params = self.get_function_parameters(
+                getattr(class_def, class_def.FUNCTION)
+            )
             no_params = class_def_params is None
 
             # Remove any keyword arguments from **inputs if they are not in class_def_params
-            inputs = {key: value for key, value in inputs.items() if no_params or key in class_def_params}
-            for input, input_var, arg in missing:
-                inputs[input] = {"variable_name": f"parse_arg(args." + input_var + ")"}
+            inputs = {
+                key: value
+                for key, value in inputs.items()
+                if no_params or key in class_def_params
+            }
             # Deal with hidden variables
             if class_def_params is not None:
-                if 'unique_id' in class_def_params:
-                    inputs['unique_id'] = random.randint(1, 2**64)
-                if 'prompt' in class_def_params:
-                    inputs["prompt"] = {"variable_name": "PROMPT_DATA"}
-                    include_prompt_data = True
+                if "unique_id" in class_def_params:
+                    inputs["unique_id"] = random.randint(1, 2**64)
 
             # Create executed variable and generate code
-            executed_variables[idx] = f'{self.clean_variable_name(class_type)}_{idx}'
+            executed_variables[idx] = f"{self.clean_variable_name(class_type)}_{idx}"
             inputs = self.update_inputs(inputs, executed_variables)
-            
-            if class_type == 'SaveImage':
-                save_code = self.create_function_call_code(initialized_objects[class_type], class_def.FUNCTION, executed_variables[idx], is_special_function, **inputs).strip()
-                return_code = ['if __name__ != "__main__":', '\treturn dict(' + ', '.join(self.format_arg(key, value) for key, value in inputs.items()) + ')', 'else:', '\t' + save_code]
 
-                if is_special_function:
-                    special_functions_code.extend(return_code)
-                else:
-                    code.extend(return_code) ### This should presumably NEVER occur for a valid workflow
+            if is_special_function:
+                special_functions_code.append(
+                    self.create_function_call_code(
+                        initialized_objects[class_type],
+                        class_def.FUNCTION,
+                        executed_variables[idx],
+                        is_special_function,
+                        **inputs,
+                    )
+                )
             else:
-                if is_special_function:
-                    special_functions_code.append(self.create_function_call_code(initialized_objects[class_type], class_def.FUNCTION, executed_variables[idx], is_special_function, **inputs))
-                else:
-                    code.append(self.create_function_call_code(initialized_objects[class_type], class_def.FUNCTION, executed_variables[idx], is_special_function, **inputs))
+                code.append(
+                    self.create_function_call_code(
+                        initialized_objects[class_type],
+                        class_def.FUNCTION,
+                        executed_variables[idx],
+                        is_special_function,
+                        **inputs,
+                    )
+                )
 
         # Generate final code by combining imports and code, and wrap them in a main function
-        final_code = self.assemble_python_code(import_statements, special_functions_code, arg_inputs, code, queue_size, custom_nodes, include_prompt_data)
+        final_code = self.assemble_python_code(
+            import_statements, special_functions_code, code, queue_size, custom_nodes
+        )
 
         return final_code
 
-    def create_function_call_code(self, obj_name: str, func: str, variable_name: str, is_special_function: bool, **kwargs) -> str:
+    def create_function_call_code(
+        self,
+        obj_name: str,
+        func: str,
+        variable_name: str,
+        is_special_function: bool,
+        **kwargs,
+    ) -> str:
         """Generate Python code for a function call.
 
         Args:
@@ -286,10 +298,15 @@ class CodeGenerator:
         Returns:
             str: The generated Python code.
         """
-        args = ', '.join(self.format_arg(key, value) for key, value in kwargs.items())
+        args = ", ".join(self.format_arg(key, value) for key, value in kwargs.items())
 
         # Generate the Python code
-        code = f'{variable_name} = {obj_name}.{func}({args})\n'
+        code = f"{variable_name} = {obj_name}.{func}({args})\n"
+
+        # If the code contains dependencies and is not a loader or encoder, indent the code because it will be placed inside
+        # of a for loop
+        if not is_special_function:
+            code = f"\t{code}"
 
         return code
 
@@ -303,16 +320,23 @@ class CodeGenerator:
         Returns:
             str: Formatted argument as a string.
         """
-        # Randomize the seed if it's a set value
-        if isinstance(value, int) and (key == 'noise_seed' or key == 'seed'):
-            return f'{key}=random.randint(1, 2**64)'
+        if key == "noise_seed" or key == "seed":
+            return f"{key}=random.randint(1, 2**64)"
         elif isinstance(value, str):
-            return f'{key}={repr(value)}'
-        elif isinstance(value, dict) and 'variable_name' in value:
+            value = value.replace("\n", "\\n").replace('"', "'")
+            return f'{key}="{value}"'
+        elif isinstance(value, dict) and "variable_name" in value:
             return f'{key}={value["variable_name"]}'
-        return f'{key}={value}'
+        return f"{key}={value}"
 
-    def assemble_python_code(self, import_statements: set, special_functions_code: List[str], arg_inputs: List[Tuple[str, str]], code: List[str], queue_size: int, custom_nodes=False, include_prompt_data=True) -> str:
+    def assemble_python_code(
+        self,
+        import_statements: set,
+        speical_functions_code: List[str],
+        code: List[str],
+        queue_size: int,
+        custom_nodes=False,
+    ) -> str:
         """Generates the final code string.
 
         Args:
@@ -327,89 +351,54 @@ class CodeGenerator:
         """
         # Get the source code of the utils functions as a string
         func_strings = []
-        for func in PACKAGED_FUNCTIONS:
-            func_strings.append(f'\n{inspect.getsource(func)}')
-        
-        argparse_code = [f'parser = argparse.ArgumentParser(description="A converted ComfyUI workflow. Required inputs listed below. Values passed should be valid JSON (assumes string if not valid JSON).")']
-        for i, (input_name, arg_desc) in enumerate(arg_inputs):
-            argparse_code.append(f'parser.add_argument("{input_name}", help="{arg_desc} (autogenerated)")\n')
-        argparse_code.append(f'parser.add_argument("--queue-size", "-q", type=int, default={queue_size}, help="How many times the workflow will be executed (default: {queue_size})")\n')
-        argparse_code.append('parser.add_argument("--comfyui-directory", "-c", default=None, help="Where to look for ComfyUI (default: current directory)")\n')
-        argparse_code.append(f'parser.add_argument("--output", "-o", default=None, help="The location to save the output image. Either a file path, a directory, or - for stdout (default: the ComfyUI output directory)")\n')
-        argparse_code.append(f'parser.add_argument("--disable-metadata", action="store_true", help="Disables writing workflow metadata to the outputs")\n')
-        argparse_code.append('''
-comfy_args = [sys.argv[0]]
-if __name__ == "__main__" and "--" in sys.argv:
-    idx = sys.argv.index("--")
-    comfy_args += sys.argv[idx+1:]
-    sys.argv = sys.argv[:idx]
-
-args = None
-if __name__ == "__main__":
-    args = parser.parse_args()
-    sys.argv = comfy_args
-if args is not None and args.output is not None and args.output == "-":
-    ctx = contextlib.redirect_stdout(sys.stderr)
-else:
-    ctx = contextlib.nullcontext()
-''')
-        
+        for func in [
+            get_value_at_index,
+            find_path,
+            add_comfyui_directory_to_sys_path,
+            add_extra_model_paths,
+        ]:
+            func_strings.append(f"\n{inspect.getsource(func)}")
         # Define static import statements required for the script
-        static_imports = ['import os', 'import random', 'import sys', 'import json', 'import argparse', 'import contextlib', 'from typing import Sequence, Mapping, Any, Union', 
-                          'import torch'] + func_strings + argparse_code
-        if include_prompt_data:
-            static_imports.append(f'PROMPT_DATA = json.loads({repr(json.dumps(self.prompt))})')
+        static_imports = (
+            [
+                "import os",
+                "import random",
+                "import sys",
+                "from typing import Sequence, Mapping, Any, Union",
+                "import torch",
+            ]
+            + func_strings
+            + ["\n\nadd_comfyui_directory_to_sys_path()\nadd_extra_model_paths()\n"]
+        )
         # Check if custom nodes should be included
         if custom_nodes:
-            static_imports.append(f'\n{inspect.getsource(import_custom_nodes)}\n')
-        newline_doubletab = '\n\t\t' # You can't use backslashes in f-strings
-        newline_tripletab = '\n\t\t\t' # Same
+            static_imports.append(f"\n{inspect.getsource(import_custom_nodes)}\n")
+            custom_nodes = "import_custom_nodes()\n\t"
+        else:
+            custom_nodes = ""
+        # Create import statements for node classes
+        imports_code = [
+            f"from nodes import {', '.join([class_name for class_name in import_statements])}"
+        ]
         # Assemble the main function code, including custom nodes if applicable
-        main_function_code = f"""
-_custom_nodes_imported = {str(not custom_nodes)}
-_custom_path_added = False
-
-def main(*func_args, **func_kwargs):
-    global args, _custom_nodes_imported, _custom_path_added
-    if __name__ == "__main__":
-        if args is None:
-            args = parser.parse_args()
-    else:
-        defaults = dict((arg, parser.get_default(arg)) for arg in ['queue_size', 'comfyui_directory', 'output', 'disable_metadata'])
-        ordered_args = dict(zip({[input_name for input_name, _ in arg_inputs]}, func_args))
-
-        all_args = dict()
-        all_args.update(defaults)
-        all_args.update(ordered_args)
-        all_args.update(func_kwargs)
-
-        args = argparse.Namespace(**all_args)
-    
-    with ctx:
-        if not _custom_path_added:
-            add_comfyui_directory_to_sys_path()
-            add_extra_model_paths()
-
-            _custom_path_added = True
-        
-        if not _custom_nodes_imported:
-            import_custom_nodes()
-
-            _custom_nodes_imported = True
-        
-        from nodes import {', '.join([class_name for class_name in import_statements])}
-    
-    with torch.inference_mode(), ctx:
-        {newline_doubletab.join(special_functions_code)}
-        for q in range(args.queue_size):
-            {newline_tripletab.join(code)}""".replace("    ", "\t")
+        main_function_code = (
+            "def main():\n\t"
+            + f"{custom_nodes}with torch.inference_mode():\n\t\t"
+            + "\n\t\t".join(speical_functions_code)
+            + f"\n\n\t\tfor q in range({queue_size}):\n\t\t"
+            + "\n\t\t".join(code)
+        )
         # Concatenate all parts to form the final code
-        final_code = '\n'.join(static_imports + [main_function_code, '', 'if __name__ == "__main__":', '\tmain()'])
+        final_code = "\n".join(
+            static_imports
+            + imports_code
+            + ["", main_function_code, "", 'if __name__ == "__main__":', "\tmain()"]
+        )
         # Format the final code according to PEP 8 using the Black library
         final_code = black.format_str(final_code, mode=black.Mode())
 
         return final_code
-    
+
     def get_class_info(self, class_type: str) -> Tuple[str, str, str]:
         """Generates and returns necessary information about class type.
 
@@ -421,19 +410,13 @@ def main(*func_args, **func_kwargs):
         """
         import_statement = class_type
         variable_name = self.clean_variable_name(class_type)
-        before = ""
-        after = ""
-        if class_type.strip() == 'SaveImage':
-            before = 'save_image_wrapper(' + 'ctx, '
-            after = ')'
-        
-        if self.can_be_imported(class_type):
-            class_code = f'{variable_name} = {before}{class_type.strip()}{after}()'
+        if class_type in self.base_node_class_mappings.keys():
+            class_code = f"{variable_name} = {class_type.strip()}()"
         else:
-            class_code = f'{variable_name} = {before}NODE_CLASS_MAPPINGS["{class_type}"]{after}()'
+            class_code = f'{variable_name} = NODE_CLASS_MAPPINGS["{class_type}"]()'
 
         return class_type, import_statement, class_code
-    
+
     @staticmethod
     def clean_variable_name(class_type: str) -> str:
         """
@@ -447,14 +430,14 @@ def main(*func_args, **func_kwargs):
         """
         # Convert to lowercase and replace spaces with underscores
         clean_name = class_type.lower().strip().replace("-", "_").replace(" ", "_")
-        
+
         # Remove characters that are not letters, numbers, or underscores
-        clean_name = re.sub(r'[^a-z0-9_]', '', clean_name)
-        
+        clean_name = re.sub(r"[^a-z0-9_]", "", clean_name)
+
         # Ensure that it doesn't start with a number
         if clean_name[0].isdigit():
             clean_name = "_" + clean_name
-        
+
         return clean_name
 
     def get_function_parameters(self, func: Callable) -> List:
@@ -467,9 +450,14 @@ def main(*func_args, **func_kwargs):
             List: A list containing the names of the function's parameters.
         """
         signature = inspect.signature(func)
-        parameters = {name: param.default if param.default != param.empty else None
-                    for name, param in signature.parameters.items()}
-        catch_all = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in signature.parameters.values())
+        parameters = {
+            name: param.default if param.default != param.empty else None
+            for name, param in signature.parameters.items()
+        }
+        catch_all = any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in signature.parameters.values()
+        )
         return list(parameters.keys()) if not catch_all else None
 
     def update_inputs(self, inputs: Dict, executed_variables: Dict) -> Dict:
@@ -483,10 +471,15 @@ def main(*func_args, **func_kwargs):
             Dict: Updated inputs dictionary.
         """
         for key in inputs.keys():
-            if isinstance(inputs[key], list) and inputs[key][0] in executed_variables.keys():
-                inputs[key] = {'variable_name': f"get_value_at_index({executed_variables[inputs[key][0]]}, {inputs[key][1]})"}
+            if (
+                isinstance(inputs[key], list)
+                and inputs[key][0] in executed_variables.keys()
+            ):
+                inputs[key] = {
+                    "variable_name": f"get_value_at_index({executed_variables[inputs[key][0]]}, {inputs[key][1]})"
+                }
         return inputs
-    
+
 
 class ComfyUItoPython:
     """Main workflow to generate Python code from a workflow_api.json file.
@@ -499,8 +492,15 @@ class ComfyUItoPython:
         base_node_class_mappings (Dict): Base mappings of node classes.
     """
 
-    def __init__(self, workflow: str = "", input_file: str = "", output_file: (str | TextIO) = "", queue_size: int = 1, node_class_mappings: Dict = NODE_CLASS_MAPPINGS,
-                 needs_init_custom_nodes: bool = False):
+    def __init__(
+        self,
+        workflow: str = "",
+        input_file: str = "",
+        output_file: str | TextIO = "",
+        queue_size: int = 1,
+        node_class_mappings: Dict = NODE_CLASS_MAPPINGS,
+        needs_init_custom_nodes: bool = False,
+    ):
         """Initialize the ComfyUItoPython class with the given parameters. Exactly one of workflow or input_file must be specified.
 
         Args:
@@ -515,17 +515,17 @@ class ComfyUItoPython:
             raise ValueError("Can't provide both input_file and workflow")
         elif not input_file and not workflow:
             raise ValueError("Needs input_file or workflow")
-        
+
         if not output_file:
             raise ValueError("Needs output_file")
-        
+
         self.workflow = workflow
         self.input_file = input_file
         self.output_file = output_file
         self.queue_size = queue_size
         self.node_class_mappings = node_class_mappings
         self.needs_init_custom_nodes = needs_init_custom_nodes
-        
+
         self.base_node_class_mappings = copy.deepcopy(self.node_class_mappings)
         self.execute()
 
@@ -553,8 +553,12 @@ class ComfyUItoPython:
         load_order = load_order_determiner.determine_load_order()
 
         # Step 4: Generate the workflow code
-        code_generator = CodeGenerator(self.node_class_mappings, self.base_node_class_mappings, data)
-        generated_code = code_generator.generate_workflow(load_order, queue_size=self.queue_size)
+        code_generator = CodeGenerator(
+            self.node_class_mappings, self.base_node_class_mappings
+        )
+        generated_code = code_generator.generate_workflow(
+            load_order, queue_size=self.queue_size
+        )
 
         # Step 5: Write the generated code to a file
         FileHandler.write_code_to_file(self.output_file, generated_code)
@@ -562,24 +566,62 @@ class ComfyUItoPython:
         print(f"Code successfully generated and written to {self.output_file}")
 
 
-if __name__ == '__main__':
-    import argparse
-    
-    ap = argparse.ArgumentParser(description="Converts a ComfyUI-style workflow.json file to a Python file. Must have been exported with API calls")
-    
-    ap.add_argument("workflow", help="The workflow.json file to convert")
-    ap.add_argument("--output", "-o", default=None, help="The output file (defaults to [input file].py)")
-    ap.add_argument("--queue-size", "-q", default=1, type=int, help="The queue size per run")
-    ap.add_argument("--yes", "--overwrite", "-y", action="store_true", help="Overwrite the output file if it exists")
-    
-    args = ap.parse_args()
-    
-    output = args.output if args.output else args.workflow + ".py"
-    if os.path.isfile(output):
-        if not args.yes:
-            if input("Are you sure you want to overwrite " + output + "?\nY/n").strip().lower() not in ("y", "yes"):
-                print("Exiting.")
-                sys.exit(1)
+def run(
+    input_file: str = DEFAULT_INPUT_FILE,
+    output_file: str = DEFAULT_OUTPUT_FILE,
+    queue_size: int = DEFAULT_QUEUE_SIZE,
+) -> None:
+    """Generate Python code from a ComfyUI workflow_api.json file.
 
-    # Convert ComfyUI workflow to Python
-    ComfyUItoPython(input_file=args.workflow, output_file=output, queue_size=args.queue_size, needs_init_custom_nodes=True)
+    Args:
+        input_file (str): Path to the input JSON file. Defaults to "workflow_api.json".
+        output_file (str): Path to the output Python file.
+            Defaults to "workflow_api.py".
+        queue_size (int): The number of times a workflow will be executed by the script.
+            Defaults to 1.
+
+    Returns:
+        None
+    """
+    ComfyUItoPython(
+        input_file=input_file,
+        output_file=output_file,
+        queue_size=queue_size,
+        needs_init_custom_nodes=True,
+    )
+
+
+def main() -> None:
+    """Main function to generate Python code from a ComfyUI workflow_api.json file."""
+    parser = ArgumentParser(
+        description="Generate Python    code from a ComfyUI workflow_api.json file."
+    )
+    parser.add_argument(
+        "-f",
+        "--input_file",
+        type=str,
+        help="path to the input JSON file",
+        default=DEFAULT_INPUT_FILE,
+    )
+    parser.add_argument(
+        "-o",
+        "--output_file",
+        type=str,
+        help="path to the output Python file",
+        default=DEFAULT_OUTPUT_FILE,
+    )
+    parser.add_argument(
+        "-q",
+        "--queue_size",
+        type=int,
+        help="number of times the workflow will be executed by default",
+        default=DEFAULT_QUEUE_SIZE,
+    )
+    pargs = parser.parse_args()
+    ComfyUItoPython(**vars(pargs))
+    print("Done.")
+
+
+if __name__ == "__main__":
+    """Run the main function."""
+    main()
