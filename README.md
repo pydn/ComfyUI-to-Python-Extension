@@ -116,15 +116,27 @@ if __name__ == "__main__":
 - Creating large queues for image generation (For example, you could adjust the script to generate 1000 images without clicking ctrl+enter 1000 times)
 - Easily expanding or iterating on your architecture in Python once a foundational workflow is in place in the GUI
 
+## V1.3.0 Release Notes
+- Generate .py file directly from the ComfyUI Web App
+
+![Save As Script](images/save_as_script.png)
+
+## V1.2.1 Release Notes
+- Dynamically change `comfyui_to_python.py` parameters with CLI arguments
+- Hotfix to handle nodes that accept kwargs.
+
+## V1.2.0 Release Notes
+- Updates to adhere to latest changes from `ComfyUI`
+
 ## V1.0.0 Release Notes
 - **Use all the custom nodes!**
     - Custom nodes are now supported. If you run into any issues with code execution, first ensure that the each node works as expected in the GUI. If it works in the GUI, but not in the generated script, please submit an issue.
 
 
-## Usage
+## Installation
 
 
-1. Navigate to your `ComfyUI` directory
+1. Navigate to your `ComfyUI/custom_nodes` directory
 
 2. Clone this repo
     ```bash
@@ -135,8 +147,8 @@ if __name__ == "__main__":
     ```
     /comfy
     /comfy_extras
-    /ComfyUI-to-Python-Extension
     /custom_nodes
+    --/ComfyUI-to-Python-Extension
     /input
     /models
     /output
@@ -157,30 +169,44 @@ if __name__ == "__main__":
     server.py
     ```
 
-3. Navigate to the `ComfyUI-to-Python-Extension` folder and install requirements
+## Web App Use
+1. Launch ComfyUI
+
+2. Load your favorite workflow and click `Save As Script`
+
+![Save As Script](images/save_as_script.png)
+
+3. Type your desired file name into the pop up screen.
+
+4. Move .py file from your downloads folder to your `ComfyUI` directory.
+
+5. Now you can execute the newly created .py file to generate images without launching a server.
+
+## CLI Usage
+1. Navigate to the `ComfyUI-to-Python-Extension` folder and install requirements
     ```bash
     pip install -r requirements.txt
     ```
 
-4. Launch ComfyUI, click the gear icon over `Queue Prompt`, then check `Enable Dev mode Options`. **THE SCRIPT WILL NOT WORK IF YOU DO NOT ENABLE THIS OPTION!**
+2. Launch ComfyUI, click the gear icon over `Queue Prompt`, then check `Enable Dev mode Options`. **THE SCRIPT WILL NOT WORK IF YOU DO NOT ENABLE THIS OPTION!**
 
 ![Enable Dev Mode Options](images/dev_mode_options.jpg)
 
-5. Load up your favorite workflows, then click the newly enabled `Save (API Format)` button under Queue Prompt
+3. Load up your favorite workflows, then click the newly enabled `Save (API Format)` button under Queue Prompt
 
-6. Move the downloaded .json workflow file to your `ComfyUI/ComfyUI-to-Python-Extension` folder
+4. Move the downloaded .json workflow file to your `ComfyUI/ComfyUI-to-Python-Extension` folder
 
-7. If needed, add arguments when executing `comfyui_to_python.py` to update the default `input_file` and `output_file` to match your .json workflow file and desired .py file name. By default, the script will look for a file called `workflow_api.json`. You can also update the `queue_size` variable to your desired number of images that you want to generate in a single script execution. By default, the scripts will generate 10 images. Run `python comfyui_to_python.py --help` for more details.
+5. If needed, add arguments when executing `comfyui_to_python.py` to update the default `input_file` and `output_file` to match your .json workflow file and desired .py file name. By default, the script will look for a file called `workflow_api.json`. You can also update the `queue_size` variable to your desired number of images that you want to generate in a single script execution. By default, the scripts will generate 10 images. Run `python comfyui_to_python.py --help` for more details.
 
-8a. Run the script with default arguments:
+6a. Run the script with default arguments:
    ```bash
    python comfyui_to_python.py
    ```
-8b. Run the script with optional arguments:
+6b. Run the script with optional arguments:
    ```bash
    python comfyui_to_python.py --input_file "workflow_api (2).json" --output_file my_workflow.py --queue_size 100
    ```
 
-9. After running `comfyui_to_python.py`, a new .py file will be created in the current working directory. If you made no changes, look for `workflow_api.py`.
+7. After running `comfyui_to_python.py`, a new .py file will be created in the current working directory. If you made no changes, look for `workflow_api.py`.
 
-10. Now you can execute the newly created .py file to generate images without launching a server.
+8. Now you can execute the newly created .py file to generate images without launching a server.
