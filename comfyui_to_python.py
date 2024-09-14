@@ -502,7 +502,6 @@ class ComfyUItoPython:
         needs_init_custom_nodes: bool = False,
     ):
         """Initialize the ComfyUItoPython class with the given parameters. Exactly one of workflow or input_file must be specified.
-
         Args:
             workflow (str): The workflow's JSON.
             input_file (str): Path to the input JSON file.
