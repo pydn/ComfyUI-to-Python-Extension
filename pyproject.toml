@@ -1,15 +1,15 @@
 [project]
 name = "comfyui-to-python-extension"
-description = "A version of ComfyUI-to-Python-Extension that works as a custom node. Adds a button in the UI that saves the current workflow as a Python file, a CLI for converting workflows, and slightly better custom node support."
-version = "1.0.0"
+description = "This custom node allows you to generate pure python code from your ComfyUI workflow with the click of a button. Great for rapid experimentation or production deployment."
+version = "1.3.0"
 license = "LICENSE"
-dependencies = ["torch", "torchdiffeq", "torchsde", "einops", "transformers>=4.25.1", "safetensors>=0.3.0", "aiohttp", "accelerate", "pyyaml", "Pillow", "scipy", "tqdm", "black"]
+dependencies = ["black"]
 
 [project.urls]
 Repository = "https://github.com/pydn/ComfyUI-to-Python-Extension"
 #  Used by Comfy Registry https://comfyregistry.org
 
 [tool.comfy]
-PublisherId = ""
+PublisherId = "pydn"
 DisplayName = "ComfyUI-to-Python-Extension"
 Icon = ""
