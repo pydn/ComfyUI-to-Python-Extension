@@ -1,0 +1,15 @@
+[project]
+name = "comfyui-to-python-extension"
+description = "This custom node allows you to generate pure python code from your ComfyUI workflow with the click of a button. Great for rapid experimentation or production deployment."
+version = "1.3.0"
+license = "LICENSE"
+dependencies = ["black"]
+
+[project.urls]
+Repository = "https://github.com/pydn/ComfyUI-to-Python-Extension"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = "pydn"
+DisplayName = "ComfyUI-to-Python-Extension"
+Icon = ""
