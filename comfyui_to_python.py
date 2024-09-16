@@ -275,26 +275,8 @@ class CodeGenerator:
                         **inputs,
                     )
                 )
-                print(
-                    self.create_function_call_code(
-                        initialized_objects[class_type],
-                        class_def.FUNCTION,
-                        executed_variables[idx],
-                        is_special_function,
-                        **inputs,
-                    )
-                )
             else:
                 code.append(
-                    self.create_function_call_code(
-                        initialized_objects[class_type],
-                        class_def.FUNCTION,
-                        executed_variables[idx],
-                        is_special_function,
-                        **inputs,
-                    )
-                )
-                print(
                     self.create_function_call_code(
                         initialized_objects[class_type],
                         class_def.FUNCTION,
