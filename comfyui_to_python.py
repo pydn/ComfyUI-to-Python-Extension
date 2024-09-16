@@ -211,7 +211,17 @@ class CodeGenerator:
         for idx, data, is_special_function in load_order:
             # Generate class definition and inputs from the data
             inputs, class_type = data["inputs"], data["class_type"]
+            input_types = self.node_class_mappings[class_type].INPUT_TYPES()
             class_def = self.node_class_mappings[class_type]()
+
+            # If required inputs are not present, skip the node as it will break the code if passed through to the script
+            missing_required_variable = False
+            if "required" in input_types.keys():
+                for required in input_types["required"]:
+                    if required not in inputs.keys():
+                        missing_required_variable = True
+            if missing_required_variable:
+                continue
 
             # If the class hasn't been initialized yet, initialize it and generate the import statements
             if class_type not in initialized_objects:
@@ -242,7 +252,12 @@ class CodeGenerator:
                 if no_params or key in class_def_params
             }
             # Deal with hidden variables
-            if class_def_params is not None:
+            if (
+                "hidden" in input_types.keys()
+                and "unique_id" in input_types["hidden"].keys()
+            ):
+                inputs["unique_id"] = random.randint(1, 2**64)
+            elif class_def_params is not None:
                 if "unique_id" in class_def_params:
                     inputs["unique_id"] = random.randint(1, 2**64)
 
@@ -260,8 +275,26 @@ class CodeGenerator:
                         **inputs,
                     )
                 )
+                print(
+                    self.create_function_call_code(
+                        initialized_objects[class_type],
+                        class_def.FUNCTION,
+                        executed_variables[idx],
+                        is_special_function,
+                        **inputs,
+                    )
+                )
             else:
                 code.append(
+                    self.create_function_call_code(
+                        initialized_objects[class_type],
+                        class_def.FUNCTION,
+                        executed_variables[idx],
+                        is_special_function,
+                        **inputs,
+                    )
+                )
+                print(
                     self.create_function_call_code(
                         initialized_objects[class_type],
                         class_def.FUNCTION,
