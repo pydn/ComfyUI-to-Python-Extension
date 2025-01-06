@@ -56,38 +56,37 @@ app.registerExtension({
 
 		// Also load to new style menu
 		const dropdownMenu = document.querySelectorAll(".p-menubar-submenu ")[0];
+		// Get submenu items
+		const listItems = dropdownMenu.querySelectorAll("li");
+		let newSetsize = listItems.length;
 
 		const separatorMenu = document.createElement("li");
-		separatorMenu.setAttribute("id", "pv_id_8_0_9");
+		separatorMenu.setAttribute("id", "pv_id_8_0_" + (newSetsize - 1).toString());
 		separatorMenu.setAttribute("class", "p-menubar-separator");
 		separatorMenu.setAttribute("role", "separator");
 		separatorMenu.setAttribute("data-pc-section", "separator");
 
 		dropdownMenu.append(separatorMenu);
 
-		// Adjust list items within to increase setsize by 1
-		const listItems = dropdownMenu.querySelectorAll("li");
-		let setsize = 0;
-
+		// Adjust list items within to increase setsize
 		listItems.forEach((item) => {
 			// First check if it's a separator
 			if(item.getAttribute("data-pc-section") !== "separator") {
-				item.setAttribute("aria-setsize", parseInt(item.getAttribute("aria-setsize")) + 2);
-				setsize = parseInt(item.getAttribute("aria-setsize"));
+				item.setAttribute("aria-setsize", newSetsize);
 			}
 		});
 
-		console.log(setsize);
+		console.log(newSetsize);
 
 		// Here's the format of list items		
 		const saveButtonText = document.createElement("li");
-		saveButtonText.setAttribute("id", "pv_id_8_0_10");
+		saveButtonText.setAttribute("id", "pv_id_8_0_" + newSetsize.toString());
 		saveButtonText.setAttribute("class", "p-menubar-item relative");
 		saveButtonText.setAttribute("role", "menuitem");
 		saveButtonText.setAttribute("aria-label", "Save as Script");
 		saveButtonText.setAttribute("aria-level", "2");
-		saveButtonText.setAttribute("aria-setsize", setsize.toString());
-		saveButtonText.setAttribute("aria-posinset", setsize.toString());
+		saveButtonText.setAttribute("aria-setsize", newSetsize.toString());
+		saveButtonText.setAttribute("aria-posinset", newSetsize.toString());
 		saveButtonText.setAttribute("data-pc-section", "item");
 		saveButtonText.setAttribute("data-p-active", "false");
 		saveButtonText.setAttribute("data-p-focused", "false");
@@ -102,8 +101,9 @@ app.registerExtension({
 		`
 
 		saveButtonText.onclick = () => savePythonScript();
+		
 		dropdownMenu.append(saveButtonText);
-
+		
 
 		
 		console.log("SaveAsScript loaded");
