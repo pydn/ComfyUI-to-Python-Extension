@@ -94,7 +94,7 @@ app.registerExtension({
 		saveButtonText.innerHTML = `
 			<div class="p-menubar-item-content" data-pc-section="itemcontent">
 				<a class="p-menubar-item-link" tabindex="-1" aria-hidden="true" data-pc-section="itemlink" target="_blank">
-					<span class="p-menubar-item-icon pi pi-download"></span>
+					<span class="p-menubar-item-icon pi pi-book"></span>
 					<span class="p-menubar-item-label">Save as Script</span>
 				</a>
 			</div>
