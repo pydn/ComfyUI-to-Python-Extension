@@ -170,17 +170,20 @@ class CodeGenerator:
     Attributes:
         node_class_mappings (Dict): Mappings of node classes.
         base_node_class_mappings (Dict): Base mappings of node classes.
+        param_mappings (Dict): Parameter mappings for parameterized code generation.
     """
 
-    def __init__(self, node_class_mappings: Dict, base_node_class_mappings: Dict):
+    def __init__(self, node_class_mappings: Dict, base_node_class_mappings: Dict, param_mappings: Dict = None):
         """Initialize the CodeGenerator with given node class mappings.
 
         Args:
             node_class_mappings (Dict): Mappings of node classes.
             base_node_class_mappings (Dict): Base mappings of node classes.
+            param_mappings (Dict): Parameter mappings for parameterized code generation.
         """
         self.node_class_mappings = node_class_mappings
         self.base_node_class_mappings = base_node_class_mappings
+        self.param_mappings = param_mappings or {}
 
     def generate_workflow(
         self,
@@ -272,6 +275,7 @@ class CodeGenerator:
                         class_def.FUNCTION,
                         executed_variables[idx],
                         is_special_function,
+                        node_id=idx,
                         **inputs,
                     )
                 )
@@ -282,6 +286,7 @@ class CodeGenerator:
                         class_def.FUNCTION,
                         executed_variables[idx],
                         is_special_function,
+                        node_id=idx,
                         **inputs,
                     )
                 )
@@ -299,6 +304,7 @@ class CodeGenerator:
         func: str,
         variable_name: str,
         is_special_function: bool,
+        node_id: str = None,
         **kwargs,
     ) -> str:
         """Generate Python code for a function call.
@@ -308,12 +314,13 @@ class CodeGenerator:
             func (str): The function to be called.
             variable_name (str): The name of the variable that the function result should be assigned to.
             is_special_function (bool): Determines the code indentation.
+            node_id (str): The node ID for parameter mapping.
             **kwargs: The keyword arguments for the function.
 
         Returns:
             str: The generated Python code.
         """
-        args = ", ".join(self.format_arg(key, value) for key, value in kwargs.items())
+        args = ", ".join(self.format_arg(key, value, node_id) for key, value in kwargs.items())
 
         # Generate the Python code
         code = f"{variable_name} = {obj_name}.{func}({args})\n"
@@ -325,16 +332,33 @@ class CodeGenerator:
 
         return code
 
-    def format_arg(self, key: str, value: any) -> str:
+    def format_arg(self, key: str, value: any, node_id: str = None) -> str:
         """Formats arguments based on key and value.
 
         Args:
             key (str): Argument key.
             value (any): Argument value.
+            node_id (str): Node ID for parameter mapping lookup.
 
         Returns:
             str: Formatted argument as a string.
         """
+        # Check if this value should be parameterized
+        param_name = self.get_param_name_for_node_key(node_id, key)
+        
+        if param_name and self.param_mappings:
+            # Use the value parameter as default (it already contains the workflow default)
+            if key == "noise_seed" or key == "seed":
+                return f"{key}={param_name} or random.randint(1, 2**64)"
+            elif isinstance(value, str):
+                default_str = value.replace("\n", "\\n").replace('"', "'")
+                return f'{key}={param_name} or "{default_str}"'
+            elif isinstance(value, dict) and "variable_name" in value:
+                return f'{key}={value["variable_name"]}'
+            else:
+                return f"{key}={param_name} or {value}"
+        
+        # Original formatting logic for non-parameterized values
         if key == "noise_seed" or key == "seed":
             return f"{key}=random.randint(1, 2**64)"
         elif isinstance(value, str):
@@ -343,6 +367,26 @@ class CodeGenerator:
         elif isinstance(value, dict) and "variable_name" in value:
             return f'{key}={value["variable_name"]}'
         return f"{key}={value}"
+
+    def get_param_name_for_node_key(self, node_id: str, key: str) -> str:
+        """Get parameter name for a given node ID and key.
+        
+        Args:
+            node_id (str): Node ID.
+            key (str): Parameter key.
+            
+        Returns:
+            str: Parameter name if found, None otherwise.
+        """
+        if not self.param_mappings or not node_id:
+            return None
+            
+        for param_name, mappings in self.param_mappings.items():
+            for mapping in mappings:
+                if len(mapping) == 2 and mapping[0] == node_id and mapping[1] == key:
+                    return param_name
+        return None
+
 
     def assemble_python_code(
         self,
@@ -395,9 +439,21 @@ class CodeGenerator:
         imports_code = [
             f"from nodes import {', '.join([class_name for class_name in import_statements])}"
         ]
+        # Generate main function signature
+        if self.param_mappings:
+            # Create parameterized main function
+            param_list = []
+            for param_name in self.param_mappings.keys():
+                param_list.append(f"{param_name} = None")
+            
+            param_string = ', \n    '.join(param_list)
+            main_signature = f"def main(\n    {param_string}\n):"
+        else:
+            main_signature = "def main():"
+        
         # Assemble the main function code, including custom nodes if applicable
         main_function_code = (
-            "def main():\n\t"
+            main_signature + "\n\t"
             + f"{custom_nodes}with torch.inference_mode():\n\t\t"
             + "\n\t\t".join(speical_functions_code)
             + f"\n\n\t\tfor q in range({queue_size}):\n\t\t"
@@ -515,6 +571,7 @@ class ComfyUItoPython:
         queue_size: int = 1,
         node_class_mappings: Dict = NODE_CLASS_MAPPINGS,
         needs_init_custom_nodes: bool = False,
+        param_mappings_file: str = "",
     ):
         """Initialize the ComfyUItoPython class with the given parameters. Exactly one of workflow or input_file must be specified.
         Args:
@@ -524,6 +581,7 @@ class ComfyUItoPython:
             queue_size (int): The number of times a workflow will be executed by the script. Defaults to 1.
             node_class_mappings (Dict): Mappings of node classes. Defaults to NODE_CLASS_MAPPINGS.
             needs_init_custom_nodes (bool): Whether to initialize custom nodes. Defaults to False.
+            param_mappings_file (str): Path to the parameter mappings JSON file.
         """
         if input_file and workflow:
             raise ValueError("Can't provide both input_file and workflow")
@@ -539,6 +597,7 @@ class ComfyUItoPython:
         self.queue_size = queue_size
         self.node_class_mappings = node_class_mappings
         self.needs_init_custom_nodes = needs_init_custom_nodes
+        self.param_mappings_file = param_mappings_file
 
         self.base_node_class_mappings = copy.deepcopy(self.node_class_mappings)
         self.execute()
@@ -562,19 +621,24 @@ class ComfyUItoPython:
         else:
             data = json.loads(self.workflow)
 
-        # Step 3: Determine the load order
+        # Step 3: Read parameter mappings if provided
+        param_mappings = {}
+        if self.param_mappings_file:
+            param_mappings = FileHandler.read_json_file(self.param_mappings_file)
+
+        # Step 4: Determine the load order
         load_order_determiner = LoadOrderDeterminer(data, self.node_class_mappings)
         load_order = load_order_determiner.determine_load_order()
 
-        # Step 4: Generate the workflow code
+        # Step 5: Generate the workflow code
         code_generator = CodeGenerator(
-            self.node_class_mappings, self.base_node_class_mappings
+            self.node_class_mappings, self.base_node_class_mappings, param_mappings
         )
         generated_code = code_generator.generate_workflow(
             load_order, queue_size=self.queue_size
         )
 
-        # Step 5: Write the generated code to a file
+        # Step 6: Write the generated code to a file
         FileHandler.write_code_to_file(self.output_file, generated_code)
 
         print(f"Code successfully generated and written to {self.output_file}")
@@ -584,6 +648,8 @@ def run(
     input_file: str = DEFAULT_INPUT_FILE,
     output_file: str = DEFAULT_OUTPUT_FILE,
     queue_size: int = DEFAULT_QUEUE_SIZE,
+    param_mappings_file: str = "",
+    no_custom_nodes: bool = False,
 ) -> None:
     """Generate Python code from a ComfyUI workflow_api.json file.
 
@@ -593,6 +659,8 @@ def run(
             Defaults to "workflow_api.py".
         queue_size (int): The number of times a workflow will be executed by the script.
             Defaults to 1.
+        param_mappings_file (str): Path to the parameter mappings JSON file.
+        no_custom_nodes (bool): Skip custom nodes initialization for testing. Defaults to False.
 
     Returns:
         None
@@ -601,14 +669,15 @@ def run(
         input_file=input_file,
         output_file=output_file,
         queue_size=queue_size,
-        needs_init_custom_nodes=True,
+        needs_init_custom_nodes=not no_custom_nodes,
+        param_mappings_file=param_mappings_file,
     )
 
 
 def main() -> None:
     """Main function to generate Python code from a ComfyUI workflow_api.json file."""
     parser = ArgumentParser(
-        description="Generate Python    code from a ComfyUI workflow_api.json file."
+        description="Generate Python code from a ComfyUI workflow_api.json file."
     )
     parser.add_argument(
         "-f",
@@ -630,6 +699,18 @@ def main() -> None:
         type=int,
         help="number of times the workflow will be executed by default",
         default=DEFAULT_QUEUE_SIZE,
+    )
+    parser.add_argument(
+        "-p",
+        "--param_mappings_file",
+        type=str,
+        help="path to the parameter mappings JSON file",
+        default="",
+    )
+    parser.add_argument(
+        "--no-custom-nodes",
+        action="store_true",
+        help="skip custom nodes initialization (useful when nodes are already loaded or for testing with base nodes only)",
     )
     pargs = parser.parse_args()
     run(**vars(pargs))
