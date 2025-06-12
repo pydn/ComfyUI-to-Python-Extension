@@ -368,7 +368,7 @@ class CodeGenerator:
 
         # Generate the cached Python code
         indent = "\t" if not is_special_function else ""
-        code = f'{indent}{variable_name} = _NODE_CACHE.setdefault("{cache_key}", {obj_name}.{func}({args}))\n'
+        code = f'{indent}{variable_name} = _NODE_CACHE.["{cache_key}"] if {cache_key} in _NODE_CACHE else _NODE_CACHE.setdefault("{cache_key}", {obj_name}.{func}({args}))\n'
 
         return code
 
