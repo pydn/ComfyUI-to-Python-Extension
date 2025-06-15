@@ -200,9 +200,10 @@ class CodeGenerator:
             str: Generated execution code as a string.
         """
         # Create the necessary data structures to hold imports and generated code
-        import_statements, executed_variables, special_functions_code, code = (
+        import_statements, executed_variables, special_functions_code, code, return_executable_variables = (
             set(["NODE_CLASS_MAPPINGS"]),
             {},
+            [],
             [],
             [],
         )
@@ -266,6 +267,10 @@ class CodeGenerator:
 
             # Create executed variable and generate code
             executed_variables[idx] = f"{self.clean_variable_name(class_type)}_{idx}"
+            if class_type in ["SaveImage"]:
+                # For SaveImage nodes, we need to return the variable name
+                return_executable_variables.append(executed_variables[idx])
+
             inputs = self.update_inputs(inputs, executed_variables)
 
             # Check if this node can be cached
@@ -301,7 +306,7 @@ class CodeGenerator:
 
         # Generate final code by combining imports and code, and wrap them in a main function
         final_code = self.assemble_python_code(
-            import_statements, special_functions_code, code, queue_size, custom_nodes
+            import_statements, special_functions_code, code, queue_size, custom_nodes, return_executable_variables
         )
 
         return final_code
@@ -494,6 +499,7 @@ class CodeGenerator:
         code: List[str],
         queue_size: int,
         custom_nodes=False,
+        return_executable_variables: List[str] = []
     ) -> str:
         """Generates the final code string.
 
@@ -563,6 +569,7 @@ class CodeGenerator:
             + "\n\t\t".join(speical_functions_code)
             + f"\n\n\t\tfor q in range({queue_size}):\n\t\t"
             + "\n\t\t".join(code)
+            + f"\n\t\treturn [{', '.join(return_executable_variables)}]"
         )
         # Concatenate all parts to form the final code
         final_code = "\n".join(
