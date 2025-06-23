@@ -21,7 +21,13 @@ from comfyui_to_python_utils import (
 )
 
 add_comfyui_directory_to_sys_path()
+# Store ComfyUI path to restore it after nodes import
+comfyui_path = find_path("ComfyUI")
 from nodes import NODE_CLASS_MAPPINGS
+# Restore ComfyUI path to front to fix utils package collision
+if comfyui_path and comfyui_path in sys.path:
+    sys.path.remove(comfyui_path)
+    sys.path.insert(0, comfyui_path)
 
 
 DEFAULT_INPUT_FILE = "workflow_api.json"
