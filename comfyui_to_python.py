@@ -21,12 +21,18 @@ from comfyui_to_python_utils import (
 )
 
 add_comfyui_directory_to_sys_path()
+# Store ComfyUI path to restore it after nodes import
+comfyui_path = find_path("ComfyUI")
 from nodes import NODE_CLASS_MAPPINGS
+# Restore ComfyUI path to front to fix utils package collision
+if comfyui_path and comfyui_path in sys.path:
+    sys.path.remove(comfyui_path)
+    sys.path.insert(0, comfyui_path)
 
 
 DEFAULT_INPUT_FILE = "workflow_api.json"
 DEFAULT_OUTPUT_FILE = "workflow_api.py"
-DEFAULT_QUEUE_SIZE = 10
+DEFAULT_QUEUE_SIZE = 1
 
 
 class FileHandler:
@@ -200,9 +206,10 @@ class CodeGenerator:
             str: Generated execution code as a string.
         """
         # Create the necessary data structures to hold imports and generated code
-        import_statements, executed_variables, special_functions_code, code = (
+        import_statements, executed_variables, special_functions_code, code, return_executable_variables = (
             set(["NODE_CLASS_MAPPINGS"]),
             {},
+            [],
             [],
             [],
         )
@@ -266,34 +273,46 @@ class CodeGenerator:
 
             # Create executed variable and generate code
             executed_variables[idx] = f"{self.clean_variable_name(class_type)}_{idx}"
+            if class_type in ["SaveImage", "SaveVideo", "SaveAudio", "SaveAudioMP3", "SaveAudioOpus"]:
+                # For SaveImage nodes, we need to return the variable name
+                return_executable_variables.append(executed_variables[idx])
+
             inputs = self.update_inputs(inputs, executed_variables)
 
-            if is_special_function:
-                special_functions_code.append(
-                    self.create_function_call_code(
-                        initialized_objects[class_type],
-                        class_def.FUNCTION,
-                        executed_variables[idx],
-                        is_special_function,
-                        node_id=idx,
-                        **inputs,
-                    )
+            # Check if this node can be cached
+            is_cacheable = self.is_node_cacheable(idx, data["inputs"], load_order)
+            
+            if is_cacheable:
+                # Generate caching code for constant nodes
+                cache_key = self.generate_cache_key(idx, class_type, data["inputs"])
+                function_call_code = self.create_cached_function_call_code(
+                    initialized_objects[class_type],
+                    class_def.FUNCTION,
+                    executed_variables[idx],
+                    is_special_function,
+                    cache_key,
+                    node_id=idx,
+                    **inputs,
                 )
             else:
-                code.append(
-                    self.create_function_call_code(
-                        initialized_objects[class_type],
-                        class_def.FUNCTION,
-                        executed_variables[idx],
-                        is_special_function,
-                        node_id=idx,
-                        **inputs,
-                    )
+                # Generate regular code for non-cacheable nodes
+                function_call_code = self.create_function_call_code(
+                    initialized_objects[class_type],
+                    class_def.FUNCTION,
+                    executed_variables[idx],
+                    is_special_function,
+                    node_id=idx,
+                    **inputs,
                 )
+
+            if is_special_function:
+                special_functions_code.append(function_call_code)
+            else:
+                code.append(function_call_code)
 
         # Generate final code by combining imports and code, and wrap them in a main function
         final_code = self.assemble_python_code(
-            import_statements, special_functions_code, code, queue_size, custom_nodes
+            import_statements, special_functions_code, code, queue_size, custom_nodes, return_executable_variables
         )
 
         return final_code
@@ -332,6 +351,38 @@ class CodeGenerator:
 
         return code
 
+    def create_cached_function_call_code(
+        self,
+        obj_name: str,
+        func: str,
+        variable_name: str,
+        is_special_function: bool,
+        cache_key: str,
+        node_id: str = None,
+        **kwargs,
+    ) -> str:
+        """Generate Python code for a cached function call.
+
+        Args:
+            obj_name (str): The name of the initialized object.
+            func (str): The function to be called.
+            variable_name (str): The name of the variable that the function result should be assigned to.
+            is_special_function (bool): Determines the code indentation.
+            cache_key (str): The cache key for this node.
+            node_id (str): The node ID for parameter mapping.
+            **kwargs: The keyword arguments for the function.
+
+        Returns:
+            str: The generated Python code with caching.
+        """
+        args = ", ".join(self.format_arg(key, value, node_id) for key, value in kwargs.items())
+
+        # Generate the cached Python code
+        indent = "\t" if not is_special_function else ""
+        code = f'{indent}{variable_name} = _NODE_CACHE["{cache_key}"] if "{cache_key}" in _NODE_CACHE else _NODE_CACHE.setdefault("{cache_key}", {obj_name}.{func}({args}))\n'
+
+        return code
+
     def format_arg(self, key: str, value: any, node_id: str = None) -> str:
         """Formats arguments based on key and value.
 
@@ -348,9 +399,7 @@ class CodeGenerator:
         
         if param_name and self.param_mappings:
             # Use the value parameter as default (it already contains the workflow default)
-            if key == "noise_seed" or key == "seed":
-                return f"{key}={param_name} or random.randint(1, 2**64)"
-            elif isinstance(value, str):
+            if isinstance(value, str):
                 default_str = value.replace("\n", "\\n").replace('"', "'")
                 return f'{key}={param_name} or "{default_str}"'
             elif isinstance(value, dict) and "variable_name" in value:
@@ -359,9 +408,7 @@ class CodeGenerator:
                 return f"{key}={param_name} or {value}"
         
         # Original formatting logic for non-parameterized values
-        if key == "noise_seed" or key == "seed":
-            return f"{key}=random.randint(1, 2**64)"
-        elif isinstance(value, str):
+        if isinstance(value, str):
             value = value.replace("\n", "\\n").replace('"', "'")
             return f'{key}="{value}"'
         elif isinstance(value, dict) and "variable_name" in value:
@@ -387,6 +434,65 @@ class CodeGenerator:
                     return param_name
         return None
 
+    def is_node_cacheable(self, node_id: str, inputs: Dict, load_order: List) -> bool:
+        """Determine if a node can be cached based on the caching rules.
+        
+        Args:
+            node_id (str): The node ID
+            inputs (Dict): The node's inputs
+            load_order (List): Complete load order to check dependencies
+            
+        Returns:
+            bool: True if the node can be cached
+        """
+        # Rule 1: Can't cache nodes that use parameters
+        if self.node_uses_parameters(node_id, inputs):
+            return False
+            
+        # Rule 2: Can't cache nodes that depend on other nodes
+        if self.node_has_dependencies(inputs):
+            return False
+            
+        # Rule 3: Can't cache nodes that use random inputs
+        if self.node_uses_random(inputs):
+            return False
+            
+        return True
+
+    def node_uses_parameters(self, node_id: str, inputs: Dict) -> bool:
+        """Check if a node uses any parameterized inputs."""
+        if not self.param_mappings:
+            return False
+            
+        for key in inputs.keys():
+            if self.get_param_name_for_node_key(node_id, key):
+                return True
+        return False
+
+    def node_has_dependencies(self, inputs: Dict) -> bool:
+        """Check if a node has dependencies on other nodes."""
+        for value in inputs.values():
+            if isinstance(value, list) and len(value) >= 2:
+                # This is a dependency: [node_id, output_index]
+                return True
+        return False
+
+    def node_uses_random(self, inputs: Dict) -> bool:
+        """Check if a node uses random inputs."""
+        for key, value in inputs.items():
+            if key in ["noise_seed", "seed"] or (isinstance(value, str) and "random" in key.lower()):
+                return True
+        return False
+
+    def generate_cache_key(self, node_id: str, class_type: str, inputs: Dict) -> str:
+        """Generate a cache key for a cacheable node."""
+        # Create a deterministic key based on class type and inputs
+        # Note: This function is only called for nodes that have already passed
+        # the is_node_cacheable() check, so no dependencies are present
+        import json
+        sorted_inputs = json.dumps(inputs, sort_keys=True)
+        # Use abs() to ensure hash is always positive for valid dictionary keys
+        return f"{class_type}_{abs(hash(sorted_inputs))}"
 
     def assemble_python_code(
         self,
@@ -395,6 +501,7 @@ class CodeGenerator:
         code: List[str],
         queue_size: int,
         custom_nodes=False,
+        return_executable_variables: List[str] = []
     ) -> str:
         """Generates the final code string.
 
@@ -439,6 +546,12 @@ class CodeGenerator:
         imports_code = [
             f"from nodes import {', '.join([class_name for class_name in import_statements])}"
         ]
+        
+        # Add global cache variable for node caching
+        cache_code = [
+            "# Global cache for constant nodes",
+            "_NODE_CACHE = {}"
+        ]
         # Generate main function signature
         if self.param_mappings:
             # Create parameterized main function
@@ -458,11 +571,13 @@ class CodeGenerator:
             + "\n\t\t".join(speical_functions_code)
             + f"\n\n\t\tfor q in range({queue_size}):\n\t\t"
             + "\n\t\t".join(code)
+            + f"\n\t\treturn [{', '.join(return_executable_variables)}]"
         )
         # Concatenate all parts to form the final code
         final_code = "\n".join(
             static_imports
             + imports_code
+            + cache_code
             + ["", main_function_code, "", 'if __name__ == "__main__":', "\tmain()"]
         )
         # Format the final code according to PEP 8 using the Black library
