@@ -399,9 +399,7 @@ class CodeGenerator:
         
         if param_name and self.param_mappings:
             # Use the value parameter as default (it already contains the workflow default)
-            if key == "noise_seed" or key == "seed":
-                return f"{key}={param_name} or random.randint(1, 2**64)"
-            elif isinstance(value, str):
+            if isinstance(value, str):
                 default_str = value.replace("\n", "\\n").replace('"', "'")
                 return f'{key}={param_name} or "{default_str}"'
             elif isinstance(value, dict) and "variable_name" in value:
@@ -410,9 +408,7 @@ class CodeGenerator:
                 return f"{key}={param_name} or {value}"
         
         # Original formatting logic for non-parameterized values
-        if key == "noise_seed" or key == "seed":
-            return f"{key}=random.randint(1, 2**64)"
-        elif isinstance(value, str):
+        if isinstance(value, str):
             value = value.replace("\n", "\\n").replace('"', "'")
             return f'{key}="{value}"'
         elif isinstance(value, dict) and "variable_name" in value:
