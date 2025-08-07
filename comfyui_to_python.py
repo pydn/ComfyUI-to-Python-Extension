@@ -273,7 +273,7 @@ class CodeGenerator:
 
             # Create executed variable and generate code
             executed_variables[idx] = f"{self.clean_variable_name(class_type)}_{idx}"
-            if class_type in ["SaveImage", "SaveVideo", "SaveAudio", "SaveAudioMP3", "SaveAudioOpus"]:
+            if class_type in ["SaveImage", "SaveVideo", "SaveAudio", "SaveAudioMP3", "SaveAudioOpus", "SaveSVGNode", "Save Text File"]:
                 # For SaveImage nodes, we need to return the variable name
                 return_executable_variables.append(executed_variables[idx])
 
