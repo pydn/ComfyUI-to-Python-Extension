@@ -273,8 +273,11 @@ class CodeGenerator:
 
             # Create executed variable and generate code
             executed_variables[idx] = f"{self.clean_variable_name(class_type)}_{idx}"
-            if class_type in ["SaveImage", "SaveVideo", "SaveAudio", "SaveAudioMP3", "SaveAudioOpus", "SaveSVGNode", "Save Text File"]:
-                # For SaveImage nodes, we need to return the variable name
+            
+            # Check if this is an output node using the OUTPUT_NODE attribute
+            # This is more robust than hardcoding node names as it works with custom nodes too
+            if self.is_output_node(class_def):
+                # For output nodes, we need to return the variable name
                 return_executable_variables.append(executed_variables[idx])
 
             inputs = self.update_inputs(inputs, executed_variables)
@@ -483,6 +486,48 @@ class CodeGenerator:
             if key in ["noise_seed", "seed"] or (isinstance(value, str) and "random" in key.lower()):
                 return True
         return False
+
+    def is_output_node(self, class_def) -> bool:
+        """Check if a node is an output node that actually saves files to disk.
+        
+        This method checks for OUTPUT_NODE = True but excludes nodes that only
+        display/preview content without saving files. This ensures we only return
+        variables from nodes that actually produce persistent output files.
+        
+        Args:
+            class_def: The instantiated node class
+            
+        Returns:
+            bool: True if the node saves files to disk, False otherwise
+        """
+        # First check if it has OUTPUT_NODE = True
+        if not getattr(class_def, 'OUTPUT_NODE', False):
+            return False
+        
+        # Get the class name to check for display-only nodes
+        class_name = class_def.__class__.__name__
+        
+        # Exclude nodes that only display/preview without saving files
+        display_only_nodes = {
+            'PreviewImage',
+            'PreviewText', 
+            'PreviewTextNode',
+            'ShowText',
+            'DisplayText',
+            'TextPreview',
+            'DebugText',
+            'PrintText',
+        }
+        
+        # Also exclude nodes with "Preview" or "Display" in their name
+        if (class_name in display_only_nodes or 
+            'Preview' in class_name or 
+            'Display' in class_name or
+            'Debug' in class_name or
+            'Print' in class_name):
+            return False
+        
+        return True
 
     def generate_cache_key(self, node_id: str, class_type: str, inputs: Dict) -> str:
         """Generate a cache key for a cacheable node."""
