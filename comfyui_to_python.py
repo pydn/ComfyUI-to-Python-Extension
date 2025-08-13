@@ -224,6 +224,23 @@ class CodeGenerator:
             [],
         )
 
+        print("Validate param_mappings refer to existing node ids and param keys...")
+        for param_name, mappings in self.param_mappings.items():
+            for map_idx, map_key in mappings:
+                mapping_found = False
+                for node_idx, data, is_special_function in load_order:
+                    if node_idx == map_idx:
+                        if map_key in data.get("inputs", {}).keys():
+                            mapping_found = True
+                            break
+                        else:
+                            print(f"Param mapping \"{param_name}\" points to non-existing input key \"{map_key}\" for node {node_idx}")
+                            exit(1)
+                if not mapping_found:
+                    print(f"Node with idx {map_idx} doesn't exist in workflow api!")
+                    exit(1)
+        print("Param mappings are valid!")
+
         # Detect output nodes which save files to disk and assign req_id to their filename_prefix input
         # using the self.param_mappings dictionary.
         # Motivation is to prevent overwriting files while parallel processing
