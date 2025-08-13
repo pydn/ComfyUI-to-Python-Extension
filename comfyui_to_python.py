@@ -34,6 +34,16 @@ DEFAULT_INPUT_FILE = "workflow_api.json"
 DEFAULT_OUTPUT_FILE = "workflow_api.py"
 DEFAULT_QUEUE_SIZE = 1
 
+DISPLAY_ONLY_NODES = {
+    'PreviewImage',
+    'PreviewText', 
+    'PreviewTextNode',
+    'ShowText',
+    'DisplayText',
+    'TextPreview',
+    'DebugText',
+    'PrintText',
+}
 
 class FileHandler:
     """Handles reading and writing files.
@@ -213,6 +223,24 @@ class CodeGenerator:
             [],
             [],
         )
+
+        # Detect output nodes which save files to disk and assign req_id to their filename_prefix input
+        # using the self.param_mappings dictionary.
+        # Motivation is to prevent overwriting files while parallel processing
+        # (all comfy instances are running using the same --output-directory,
+        #  wanted to fix it but that breaks caching functionality)
+        for idx, data, is_special_function in load_order:
+            # Generate class definition and inputs from the data
+            inputs, class_type = data["inputs"], data["class_type"]
+            class_def = self.node_class_mappings[class_type]()
+            if self.is_output_node(class_def):
+                if "filename_prefix" in inputs:
+                    if self.param_mappings.get("req_id") is None:
+                        self.param_mappings["req_id"] = []
+                    self.param_mappings["req_id"].append([idx, "filename_prefix"])
+                else:
+                    print(f"Output node {class_type} has no filename_prefix input, can't guarantee unique filenames!")
+
         # This dictionary will store the names of the objects that we have already initialized
         initialized_objects = {}
 
@@ -236,7 +264,7 @@ class CodeGenerator:
             # If the class hasn't been initialized yet, initialize it and generate the import statements
             if class_type not in initialized_objects:
                 # No need to use preview image nodes since we are executing the script in a terminal
-                if class_type == "PreviewImage":
+                if class_type in DISPLAY_ONLY_NODES:
                     continue
 
                 class_type, import_statement, class_code = self.get_class_info(
@@ -507,20 +535,8 @@ class CodeGenerator:
         # Get the class name to check for display-only nodes
         class_name = class_def.__class__.__name__
         
-        # Exclude nodes that only display/preview without saving files
-        display_only_nodes = {
-            'PreviewImage',
-            'PreviewText', 
-            'PreviewTextNode',
-            'ShowText',
-            'DisplayText',
-            'TextPreview',
-            'DebugText',
-            'PrintText',
-        }
-        
         # Also exclude nodes with "Preview" or "Display" in their name
-        if (class_name in display_only_nodes or 
+        if (class_name in DISPLAY_ONLY_NODES or 
             'Preview' in class_name or 
             'Display' in class_name or
             'Debug' in class_name or
