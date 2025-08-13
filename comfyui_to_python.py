@@ -34,6 +34,16 @@ DEFAULT_INPUT_FILE = "workflow_api.json"
 DEFAULT_OUTPUT_FILE = "workflow_api.py"
 DEFAULT_QUEUE_SIZE = 1
 
+DISPLAY_ONLY_NODES = {
+    'PreviewImage',
+    'PreviewText', 
+    'PreviewTextNode',
+    'ShowText',
+    'DisplayText',
+    'TextPreview',
+    'DebugText',
+    'PrintText',
+}
 
 class FileHandler:
     """Handles reading and writing files.
@@ -213,6 +223,41 @@ class CodeGenerator:
             [],
             [],
         )
+
+        print("Validate param_mappings refer to existing node ids and param keys...")
+        for param_name, mappings in self.param_mappings.items():
+            for map_idx, map_key in mappings:
+                mapping_found = False
+                for node_idx, data, is_special_function in load_order:
+                    if node_idx == map_idx:
+                        if map_key in data.get("inputs", {}).keys():
+                            mapping_found = True
+                            break
+                        else:
+                            print(f"Param mapping \"{param_name}\" points to non-existing input key \"{map_key}\" for node {node_idx}")
+                            exit(1)
+                if not mapping_found:
+                    print(f"Node with idx {map_idx} doesn't exist in workflow api!")
+                    exit(1)
+        print("Param mappings are valid!")
+
+        # Detect output nodes which save files to disk and assign req_id to their filename_prefix input
+        # using the self.param_mappings dictionary.
+        # Motivation is to prevent overwriting files while parallel processing
+        # (all comfy instances are running using the same --output-directory,
+        #  wanted to fix it but that breaks caching functionality)
+        for idx, data, is_special_function in load_order:
+            # Generate class definition and inputs from the data
+            inputs, class_type = data["inputs"], data["class_type"]
+            class_def = self.node_class_mappings[class_type]()
+            if self.is_output_node(class_def):
+                if "filename_prefix" in inputs:
+                    if self.param_mappings.get("req_id") is None:
+                        self.param_mappings["req_id"] = []
+                    self.param_mappings["req_id"].append([idx, "filename_prefix"])
+                else:
+                    print(f"Output node {class_type} has no filename_prefix input, can't guarantee unique filenames!")
+
         # This dictionary will store the names of the objects that we have already initialized
         initialized_objects = {}
 
@@ -236,7 +281,7 @@ class CodeGenerator:
             # If the class hasn't been initialized yet, initialize it and generate the import statements
             if class_type not in initialized_objects:
                 # No need to use preview image nodes since we are executing the script in a terminal
-                if class_type == "PreviewImage":
+                if class_type in DISPLAY_ONLY_NODES:
                     continue
 
                 class_type, import_statement, class_code = self.get_class_info(
@@ -273,8 +318,11 @@ class CodeGenerator:
 
             # Create executed variable and generate code
             executed_variables[idx] = f"{self.clean_variable_name(class_type)}_{idx}"
-            if class_type in ["SaveImage", "SaveVideo", "SaveAudio", "SaveAudioMP3", "SaveAudioOpus", "SaveSVGNode", "Save Text File"]:
-                # For SaveImage nodes, we need to return the variable name
+            
+            # Check if this is an output node using the OUTPUT_NODE attribute
+            # This is more robust than hardcoding node names as it works with custom nodes too
+            if self.is_output_node(class_def):
+                # For output nodes, we need to return the variable name
                 return_executable_variables.append(executed_variables[idx])
 
             inputs = self.update_inputs(inputs, executed_variables)
@@ -483,6 +531,36 @@ class CodeGenerator:
             if key in ["noise_seed", "seed"] or (isinstance(value, str) and "random" in key.lower()):
                 return True
         return False
+
+    def is_output_node(self, class_def) -> bool:
+        """Check if a node is an output node that actually saves files to disk.
+        
+        This method checks for OUTPUT_NODE = True but excludes nodes that only
+        display/preview content without saving files. This ensures we only return
+        variables from nodes that actually produce persistent output files.
+        
+        Args:
+            class_def: The instantiated node class
+            
+        Returns:
+            bool: True if the node saves files to disk, False otherwise
+        """
+        # First check if it has OUTPUT_NODE = True
+        if not getattr(class_def, 'OUTPUT_NODE', False):
+            return False
+        
+        # Get the class name to check for display-only nodes
+        class_name = class_def.__class__.__name__
+        
+        # Also exclude nodes with "Preview" or "Display" in their name
+        if (class_name in DISPLAY_ONLY_NODES or 
+            'Preview' in class_name or 
+            'Display' in class_name or
+            'Debug' in class_name or
+            'Print' in class_name):
+            return False
+        
+        return True
 
     def generate_cache_key(self, node_id: str, class_type: str, inputs: Dict) -> str:
         """Generate a cache key for a cacheable node."""
