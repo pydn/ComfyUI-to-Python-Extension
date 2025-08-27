@@ -224,6 +224,10 @@ class CodeGenerator:
             [],
         )
 
+        # Force req_id input even if not mapped to any node
+        if self.param_mappings.get("req_id") is None:
+            self.param_mappings["req_id"] = []
+
         print("Validate param_mappings refer to existing node ids and param keys...")
         for param_name, mappings in self.param_mappings.items():
             for map_idx, map_key in mappings:
@@ -252,8 +256,6 @@ class CodeGenerator:
             class_def = self.node_class_mappings[class_type]()
             if self.is_output_node(class_def):
                 if "filename_prefix" in inputs:
-                    if self.param_mappings.get("req_id") is None:
-                        self.param_mappings["req_id"] = []
                     self.param_mappings["req_id"].append([idx, "filename_prefix"])
                 else:
                     print(f"Output node {class_type} has no filename_prefix input, can't guarantee unique filenames!")
