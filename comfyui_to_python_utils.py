@@ -26,6 +26,14 @@ def import_custom_nodes() -> None:
     loop.run_until_complete(init_extra_nodes())
 
 
+async def import_custom_nodes_async() -> None:
+    """Find all custom nodes in the custom_nodes folder and add those node objects to NODE_CLASS_MAPPINGS
+       This function is invoked async from the created workflow py so it doesn't require event loop setup
+    """
+    from nodes import init_extra_nodes
+    await init_extra_nodes()
+
+
 def find_path(name: str, path: str = None) -> str:
     """
     Recursively looks at parent folders starting from the given path until it finds the given name.
