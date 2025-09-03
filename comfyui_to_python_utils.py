@@ -28,9 +28,20 @@ def import_custom_nodes() -> None:
 
 async def import_custom_nodes_async() -> None:
     """Find all custom nodes in the custom_nodes folder and add those node objects to NODE_CLASS_MAPPINGS
-       This function is invoked async from the created workflow py so it doesn't require event loop setup
+
+    This function retrieves the asyncio event loop, initializes the PromptServer,
+    creates a PromptQueue, and initializes the custom nodes.
     """
     from nodes import init_extra_nodes
+    import server
+    import execution
+    import asyncio
+
+    loop = asyncio.get_event_loop()
+    server_instance = server.PromptServer(loop)
+    execution.PromptQueue(server_instance)
+
+    print("PromptServer and PromptQueue initialized")
     await init_extra_nodes()
 
 
