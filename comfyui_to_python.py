@@ -398,7 +398,8 @@ class CodeGenerator:
         args = ", ".join(self.format_arg(key, value, node_id) for key, value in kwargs.items())
 
         # Generate the Python code
-        code = f"{variable_name} = {"await " if is_async else ""}{obj_name}.{func}({args})\n"
+        await_prefix = "await " if is_async else ""
+        code = f"{variable_name} = {await_prefix}{obj_name}.{func}({args})\n"
 
         # If the code contains dependencies and is not a loader or encoder, indent the code because it will be placed inside
         # of a for loop
