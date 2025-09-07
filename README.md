@@ -210,3 +210,17 @@ if __name__ == "__main__":
 7. After running `comfyui_to_python.py`, a new .py file will be created in the current working directory. If you made no changes, look for `workflow_api.py`.
 
 8. Now you can execute the newly created .py file to generate images without launching a server.
+
+## Testing
+
+To run the test suite:
+
+```bash
+# Install testing dependencies
+pip install -r tests/requirements.txt
+
+# Run all tests
+python run_tests.py
+```
+
+For detailed testing information, see [tests/TESTING.md](tests/TESTING.md).

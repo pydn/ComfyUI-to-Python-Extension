@@ -1,0 +1,5 @@
+# Testing dependencies for ComfyUI-to-Python-Extension
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+Pillow>=9.0.0  # For test image creation
+black  # Code formatting (used in syntax tests)
