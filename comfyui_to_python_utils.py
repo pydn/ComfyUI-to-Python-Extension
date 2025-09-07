@@ -24,7 +24,7 @@ def import_custom_nodes() -> None:
     execution.PromptQueue(server_instance)
 
     # Initializing custom nodes
-    init_extra_nodes()
+    asyncio.run(init_extra_nodes())
 
 
 def find_path(name: str, path: str = None) -> str:
