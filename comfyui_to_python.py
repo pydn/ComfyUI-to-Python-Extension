@@ -11,7 +11,8 @@ from argparse import ArgumentParser
 
 import black
 
-
+# Add current directory to Python path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from comfyui_to_python_utils import (
     import_custom_nodes,
     find_path,
