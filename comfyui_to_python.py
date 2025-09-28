@@ -6,6 +6,7 @@ import os
 import random
 import sys
 import re
+import keyword
 from typing import Dict, List, Any, Callable, Tuple, TextIO
 from argparse import ArgumentParser
 
@@ -183,6 +184,14 @@ class CodeGenerator:
         self.node_class_mappings = node_class_mappings
         self.base_node_class_mappings = base_node_class_mappings
 
+    @staticmethod
+    def is_valid_kwarg_name(name: str) -> bool:
+        """Return True if name is a valid Python identifier and not a keyword.
+
+        This prevents emitting invalid kwargs like "Update inputs".
+        """
+        return isinstance(name, str) and name.isidentifier() and not keyword.iskeyword(name)
+
     def generate_workflow(
         self,
         load_order: List,
@@ -246,11 +255,12 @@ class CodeGenerator:
             )
             no_params = class_def_params is None
 
-            # Remove any keyword arguments from **inputs if they are not in class_def_params
+            # Remove any invalid/unknown kwargs. If function accepts **kwargs (no_params=True)
+            # we still must ensure Python-valid identifiers only.
             inputs = {
                 key: value
                 for key, value in inputs.items()
-                if no_params or key in class_def_params
+                if self.is_valid_kwarg_name(key) and (no_params or key in class_def_params)
             }
             # Deal with hidden variables
             if (
@@ -314,6 +324,8 @@ class CodeGenerator:
         Returns:
             str: The generated Python code.
         """
+        # Safety: filter any invalid kwarg names again at the call site
+        kwargs = {k: v for k, v in kwargs.items() if self.is_valid_kwarg_name(k)}
         args = ", ".join(self.format_arg(key, value) for key, value in kwargs.items())
 
         # Generate the Python code
