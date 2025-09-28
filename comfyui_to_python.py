@@ -6,7 +6,7 @@ import os
 import random
 import sys
 import re
-from typing import Dict, List, Any, Callable, Tuple, TextIO
+from typing import Dict, List, Any, Callable, Tuple, TextIO, Union
 from argparse import ArgumentParser
 
 import black
@@ -37,7 +37,7 @@ class FileHandler:
     """
 
     @staticmethod
-    def read_json_file(file_path: str | TextIO, encoding: str = "utf-8") -> dict:
+    def read_json_file(file_path: Union[str, TextIO], encoding: str = "utf-8") -> dict:
         """
         Reads a JSON file and returns its contents as a dictionary.
 
@@ -59,7 +59,7 @@ class FileHandler:
         return data
 
     @staticmethod
-    def write_code_to_file(file_path: str | TextIO, code: str) -> None:
+    def write_code_to_file(file_path: Union[str, TextIO], code: str) -> None:
         """Write the specified code to a Python file.
 
         Args:
@@ -512,7 +512,7 @@ class ComfyUItoPython:
         self,
         workflow: str = "",
         input_file: str = "",
-        output_file: str | TextIO = "",
+        output_file: Union[str, TextIO] = "",
         queue_size: int = 1,
         node_class_mappings: Dict = NODE_CLASS_MAPPINGS,
         needs_init_custom_nodes: bool = False,
