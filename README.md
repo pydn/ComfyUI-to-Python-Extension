@@ -116,6 +116,11 @@ if __name__ == "__main__":
 - Creating large queues for image generation (For example, you could adjust the script to generate 1000 images without clicking ctrl+enter 1000 times)
 - Easily expanding or iterating on your architecture in Python once a foundational workflow is in place in the GUI
 
+## V1.3.1 Release Notes
+- Fix compatibility issue with newer ComfyUI versions where node IDs contain colons
+- Properly sanitize node IDs in variable names to prevent Python syntax errors
+- Add safety checks for empty variable names after cleaning
+
 ## V1.3.0 Release Notes
 - Generate .py file directly from the ComfyUI Web App
 
