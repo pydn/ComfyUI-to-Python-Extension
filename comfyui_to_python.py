@@ -263,7 +263,9 @@ class CodeGenerator:
                     inputs["unique_id"] = random.randint(1, 2**64)
 
             # Create executed variable and generate code
-            executed_variables[idx] = f"{self.clean_variable_name(class_type)}_{idx}"
+            executed_variables[idx] = (
+                f"{self.clean_variable_name(class_type)}_{self.clean_variable_name(str(idx))}"
+            )
             inputs = self.update_inputs(inputs, executed_variables)
 
             if is_special_function:
@@ -336,14 +338,17 @@ class CodeGenerator:
         Returns:
             str: Formatted argument as a string.
         """
-        if key == "noise_seed" or key == "seed":
-            return f"{key}=random.randint(1, 2**64)"
+        # Clean the key to ensure it's a valid Python identifier
+        clean_key = self.clean_parameter_name(key)
+        
+        if clean_key == "noise_seed" or clean_key == "seed":
+            return f"{clean_key}=random.randint(1, 2**64)"
         elif isinstance(value, str):
             value = value.replace("\n", "\\n").replace('"', "'")
-            return f'{key}="{value}"'
+            return f'{clean_key}="{value}"'
         elif isinstance(value, dict) and "variable_name" in value:
-            return f'{key}={value["variable_name"]}'
-        return f"{key}={value}"
+            return f'{clean_key}={value["variable_name"]}'
+        return f"{clean_key}={value}"
 
     def assemble_python_code(
         self,
@@ -444,16 +449,53 @@ class CodeGenerator:
         Returns:
             str: Cleaned variable name with no special characters or spaces
         """
-        # Convert to lowercase and replace spaces with underscores
-        clean_name = class_type.lower().strip().replace("-", "_").replace(" ", "_")
+        # Convert to lowercase and replace spaces, hyphens, and colons with underscores
+        clean_name = (
+            class_type.lower()
+            .strip()
+            .replace("-", "_")
+            .replace(" ", "_")
+            .replace(":", "_")
+        )
 
         # Remove characters that are not letters, numbers, or underscores
         clean_name = re.sub(r"[^a-z0-9_]", "", clean_name)
+
+        # If the name is empty after cleaning, provide a default
+        if not clean_name:
+            clean_name = "var"
 
         # Ensure that it doesn't start with a number
         if clean_name[0].isdigit():
             clean_name = "_" + clean_name
 
+        return clean_name
+
+    @staticmethod
+    def clean_parameter_name(param_name: str) -> str:
+        """
+        Clean parameter names to ensure they are valid Python identifiers.
+        
+        Args:
+            param_name (str): Original parameter name.
+            
+        Returns:
+            str: Cleaned parameter name that is a valid Python identifier.
+        """
+        # Convert to lowercase and replace spaces with underscores
+        clean_name = param_name.lower().strip().replace("-", "_").replace(" ", "_")
+        
+        # Remove characters that are not letters, numbers, or underscores (including emojis)
+        clean_name = re.sub(r"[^a-z0-9_]", "", clean_name)
+        
+        # Ensure that it doesn't start with a number
+        if clean_name and clean_name[0].isdigit():
+            clean_name = "_" + clean_name
+            
+        # If the name is empty after cleaning, provide a default
+        if not clean_name:
+            clean_name = "param"
+            
         return clean_name
 
     def get_function_parameters(self, func: Callable) -> List:
