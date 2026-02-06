@@ -117,7 +117,7 @@ if __name__ == "__main__":
 - Easily expanding or iterating on your architecture in Python once a foundational workflow is in place in the GUI
 
 ## V1.3.1 Release Notes
-- Fix compatibility issue with newer ComfyUI versions where node IDs contain colons
+- Fix compatibility issue with ComfyUI v0.11.0+ where node IDs contain colons
 - Properly sanitize node IDs in variable names to prevent Python syntax errors
 - Add safety checks for empty variable names after cleaning
 
