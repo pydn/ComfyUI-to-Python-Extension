@@ -145,6 +145,3 @@ cython_debug/
 *.sql
 *.sqlite
 *.xml
-
-# Local integration workspace
-.integration-env/

@@ -6,9 +6,9 @@ import os
 import random
 import re
 import traceback
-from dataclasses import dataclass, field
 from argparse import ArgumentParser
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, TextIO
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, Mapping, Sequence, TextIO
 
 try:
     import black
@@ -28,8 +28,8 @@ except ImportError:
 from comfyui_to_python_utils import (
     add_comfyui_directory_to_sys_path,
     add_extra_model_paths,
-    find_path,
     find_comfyui_root,
+    find_path,
     get_value_at_index,
     import_custom_nodes,
     normalize_path,
@@ -47,13 +47,10 @@ DEFAULT_OUTPUT_FILE = "workflow_api.py"
 DEFAULT_QUEUE_SIZE = 10
 
 
-@dataclass
-class ExportDiagnostic:
-    level: str
-    message: str
-    node_id: str | None = None
-    class_type: str | None = None
-    stage: str | None = None
+@dataclass(frozen=True)
+class NodeReference:
+    node_id: str
+    output_index: int = 0
 
 
 class ExportStageError(Exception):
@@ -84,39 +81,10 @@ class ExportStageError(Exception):
         return {key: value for key, value in payload.items() if value is not None}
 
 
-@dataclass(frozen=True)
-class NodeReference:
-    node_id: str
-    output_index: int = 0
-
-
-@dataclass
-class NormalizedNode:
-    node_id: str
-    class_type: str
-    original_class_type: str
-    inputs: Dict[str, Any]
-    raw_inputs: Dict[str, Any]
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class InvocationPlan:
-    node: NormalizedNode
-    class_type: str
-    function_name: str
-    is_custom: bool
-    import_name: str | None
-    initializer_name: str
-    output_name: str
-    inputs: Dict[str, Any]
-    is_special_function: bool
-
-
 @dataclass
 class ExportResult:
     code: str
-    diagnostics: List[ExportDiagnostic]
+    diagnostics: list[dict[str, Any]]
 
 
 class FileHandler:
@@ -142,25 +110,20 @@ class FileHandler:
 class IdentifierService:
     def __init__(self) -> None:
         self._seen: Dict[str, int] = {}
-        self._reverse: Dict[str, str] = {}
 
     def allocate(self, raw_name: str, *, prefix: str = "value") -> str:
         normalized = self._normalize(raw_name, prefix=prefix)
-        count = self._seen.get(normalized, 0)
-        self._seen[normalized] = count + 1
-        final_name = normalized if count == 0 else f"{normalized}_{count + 1}"
-        self._reverse[final_name] = raw_name
-        return final_name
-
-    def original_for(self, identifier: str) -> str | None:
-        return self._reverse.get(identifier)
+        count = self._seen.get(normalized, 0) + 1
+        self._seen[normalized] = count
+        if count == 1:
+            return normalized
+        return f"{normalized}_{count}"
 
     @staticmethod
     def _normalize(raw_name: str, *, prefix: str) -> str:
         normalized = (raw_name or "").strip().lower()
         normalized = normalized.replace("-", "_").replace(" ", "_")
-        normalized = re.sub(r"\W+", "_", normalized, flags=re.UNICODE)
-        normalized = normalized.strip("_")
+        normalized = re.sub(r"\W+", "_", normalized, flags=re.UNICODE).strip("_")
         if not normalized:
             normalized = prefix
         if normalized[0].isdigit():
@@ -171,14 +134,14 @@ class IdentifierService:
 
 
 class WorkflowNormalizer:
-    def normalize(self, workflow_data: Mapping[str, Any]) -> Dict[str, NormalizedNode]:
+    def normalize(self, workflow_data: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
         if not isinstance(workflow_data, Mapping):
             raise ExportStageError(
                 "Workflow must be a mapping of node ids to node definitions.",
                 stage="ingest",
             )
 
-        normalized_nodes: Dict[str, NormalizedNode] = {}
+        normalized_nodes: Dict[str, Dict[str, Any]] = {}
         for raw_node_id, raw_node in workflow_data.items():
             node_id = str(raw_node_id)
             if not isinstance(raw_node, Mapping):
@@ -207,24 +170,14 @@ class WorkflowNormalizer:
                     class_type=class_type,
                 )
 
-            canonical_inputs = {
-                str(input_name): self._normalize_input_value(input_value)
-                for input_name, input_value in raw_inputs.items()
+            normalized_nodes[node_id] = {
+                "node_id": node_id,
+                "class_type": class_type.strip(),
+                "inputs": {
+                    str(input_name): self._normalize_input_value(input_value)
+                    for input_name, input_value in raw_inputs.items()
+                },
             }
-            metadata = {
-                "title": raw_node.get("_meta", {}).get("title")
-                if isinstance(raw_node.get("_meta"), Mapping)
-                else None
-            }
-            normalized_nodes[node_id] = NormalizedNode(
-                node_id=node_id,
-                class_type=class_type.strip(),
-                original_class_type=class_type,
-                inputs=canonical_inputs,
-                raw_inputs=dict(raw_inputs),
-                metadata=metadata,
-            )
-
         return normalized_nodes
 
     def _normalize_input_value(self, value: Any) -> Any:
@@ -271,488 +224,338 @@ class WorkflowNormalizer:
         return None
 
 
-class LoadOrderResolver:
-    def resolve(
-        self,
-        nodes: Mapping[str, NormalizedNode],
-        node_resolver: "NodeResolver",
-    ) -> List[tuple[NormalizedNode, bool]]:
-        visited: Dict[str, str] = {}
-        ordered_node_ids: List[str] = []
-        special_node_ids: List[str] = []
+def _iter_references(value: Any) -> Iterable[NodeReference]:
+    if isinstance(value, NodeReference):
+        yield value
+        return
+    if isinstance(value, list):
+        for item in value:
+            yield from _iter_references(item)
+        return
+    if isinstance(value, Mapping):
+        for item in value.values():
+            yield from _iter_references(item)
 
-        def visit(node_id: str) -> None:
-            state = visited.get(node_id)
-            if state == "done":
-                return
-            if state == "visiting":
-                raise ExportStageError(
-                    "Workflow contains a cyclic dependency.",
-                    stage="dependency",
-                    node_id=node_id,
-                )
-            if node_id not in nodes:
-                raise ExportStageError(
-                    "Workflow references a node that is not present.",
-                    stage="dependency",
-                    node_id=node_id,
-                )
 
-            visited[node_id] = "visiting"
-            node = nodes[node_id]
-            for reference in self._iter_references(node.inputs):
-                if reference.node_id not in nodes:
-                    raise ExportStageError(
-                        "Workflow input references a missing upstream node.",
-                        stage="dependency",
-                        node_id=node.node_id,
-                        class_type=node.class_type,
-                        details={"missing_node_id": reference.node_id},
-                    )
-                visit(reference.node_id)
-
-            visited[node_id] = "done"
-            ordered_node_ids.append(node_id)
-
-        for node_id, node in nodes.items():
-            if self._is_special_function(node, node_resolver):
-                special_node_ids.append(node_id)
-            visit(node_id)
-
-        seen: set[str] = set()
-        ordered: List[tuple[NormalizedNode, bool]] = []
-        for node_id in special_node_ids + ordered_node_ids:
-            if node_id in seen:
-                continue
-            ordered.append((nodes[node_id], node_id in special_node_ids))
-            seen.add(node_id)
-        return ordered
-
-    def _is_special_function(
-        self,
-        node: NormalizedNode,
-        node_resolver: "NodeResolver",
-    ) -> bool:
-        try:
-            resolved = node_resolver.resolve(node)
-        except ExportStageError:
-            return False
-        class_instance = resolved["class_instance"]
-        category = getattr(class_instance, "CATEGORY", "")
-        function_name = getattr(class_instance, "FUNCTION", "")
-        return (
-            category == "loaders"
-            or function_name == "encode"
-            or not any(self._iter_references(node.inputs))
+def _resolve_node(
+    node: Mapping[str, Any],
+    node_class_mappings: Mapping[str, Any],
+    base_node_class_mappings: Mapping[str, Any],
+) -> Dict[str, Any]:
+    class_type = node["class_type"]
+    if class_type not in node_class_mappings:
+        raise ExportStageError(
+            "Unsupported node class. Make sure the custom node is installed and loaded in ComfyUI.",
+            stage="resolve-node",
+            node_id=node["node_id"],
+            class_type=class_type,
         )
 
-    def _iter_references(self, value: Any) -> Iterable[NodeReference]:
-        if isinstance(value, NodeReference):
-            yield value
-            return
-        if isinstance(value, list):
-            for item in value:
-                yield from self._iter_references(item)
-            return
-        if isinstance(value, Mapping):
-            for item in value.values():
-                yield from self._iter_references(item)
+    class_ctor = node_class_mappings[class_type]
+    try:
+        class_instance = class_ctor()
+    except Exception as exc:
+        raise ExportStageError(
+            "Failed to initialize node class for export.",
+            stage="resolve-node",
+            node_id=node["node_id"],
+            class_type=class_type,
+            details={"exception": str(exc)},
+        ) from exc
 
+    function_name = getattr(class_instance, "FUNCTION", None)
+    method = getattr(class_instance, function_name, None)
+    if not isinstance(function_name, str) or not callable(method):
+        raise ExportStageError(
+            "Node class FUNCTION is not callable.",
+            stage="resolve-node",
+            node_id=node["node_id"],
+            class_type=class_type,
+        )
 
-class NodeResolver:
-    def __init__(
-        self,
-        node_class_mappings: Mapping[str, Any],
-        base_node_class_mappings: Mapping[str, Any],
-    ) -> None:
-        self.node_class_mappings = dict(node_class_mappings)
-        self.base_node_class_mappings = dict(base_node_class_mappings)
-        self._cache: Dict[str, Dict[str, Any]] = {}
+    input_types = {}
+    if hasattr(class_instance, "INPUT_TYPES"):
+        input_types = class_instance.INPUT_TYPES() or {}
 
-    def resolve(self, node: NormalizedNode) -> Dict[str, Any]:
-        if node.class_type in self._cache:
-            return self._cache[node.class_type]
-
-        if node.class_type not in self.node_class_mappings:
-            raise ExportStageError(
-                "Unsupported node class. Make sure the custom node is installed and loaded in ComfyUI.",
-                stage="resolve-node",
-                node_id=node.node_id,
-                class_type=node.class_type,
-            )
-
-        class_ctor = self.node_class_mappings[node.class_type]
-        try:
-            class_instance = class_ctor()
-        except Exception as exc:
-            raise ExportStageError(
-                "Failed to initialize node class for export.",
-                stage="resolve-node",
-                node_id=node.node_id,
-                class_type=node.class_type,
-                details={"exception": str(exc)},
-            ) from exc
-
-        function_name = getattr(class_instance, "FUNCTION", None)
-        if not isinstance(function_name, str) or not function_name:
-            raise ExportStageError(
-                "Node class does not expose a callable FUNCTION.",
-                stage="resolve-node",
-                node_id=node.node_id,
-                class_type=node.class_type,
-            )
-
-        method = getattr(class_instance, function_name, None)
-        if method is None or not callable(method):
-            raise ExportStageError(
-                "Node class FUNCTION is not callable.",
-                stage="resolve-node",
-                node_id=node.node_id,
-                class_type=node.class_type,
-            )
-
-        input_types = {}
-        if hasattr(class_instance, "INPUT_TYPES"):
-            try:
-                input_types = class_instance.INPUT_TYPES() or {}
-            except Exception as exc:
-                raise ExportStageError(
-                    "Failed to inspect node INPUT_TYPES for export.",
-                    stage="resolve-node",
-                    node_id=node.node_id,
-                    class_type=node.class_type,
-                    details={"exception": str(exc)},
-                ) from exc
-
-        try:
-            signature = inspect.signature(method)
-        except (TypeError, ValueError) as exc:
-            raise ExportStageError(
-                "Failed to inspect node function signature.",
-                stage="resolve-node",
-                node_id=node.node_id,
-                class_type=node.class_type,
-                details={"exception": str(exc)},
-            ) from exc
-
-        accepts_kwargs = any(
+    signature = inspect.signature(method)
+    return {
+        "class_instance": class_instance,
+        "function_name": function_name,
+        "input_types": input_types,
+        "function_params": [name for name in signature.parameters if name != "self"],
+        "accepts_kwargs": any(
             parameter.kind == inspect.Parameter.VAR_KEYWORD
             for parameter in signature.parameters.values()
-        )
-        params = [
-            name
-            for name in signature.parameters
-            if name != "self"
-        ]
-
-        resolved = {
-            "class_instance": class_instance,
-            "function_name": function_name,
-            "input_types": input_types,
-            "function_params": params,
-            "accepts_kwargs": accepts_kwargs,
-            "is_custom": node.class_type not in self.base_node_class_mappings,
-        }
-        self._cache[node.class_type] = resolved
-        return resolved
+        ),
+        "is_custom": class_type not in base_node_class_mappings,
+    }
 
 
-class InvocationPlanner:
-    def __init__(self, node_resolver: NodeResolver) -> None:
-        self.node_resolver = node_resolver
-        self.object_identifiers = IdentifierService()
-        self.output_identifiers = IdentifierService()
-        self.import_names: List[str] = []
+def _is_special_node(node: Mapping[str, Any], resolved: Mapping[str, Any]) -> bool:
+    class_instance = resolved["class_instance"]
+    return (
+        getattr(class_instance, "CATEGORY", "") == "loaders"
+        or getattr(class_instance, "FUNCTION", "") == "encode"
+        or not any(_iter_references(node["inputs"]))
+    )
 
-    def build(self, load_order: Iterable[tuple[NormalizedNode, bool]]) -> List[InvocationPlan]:
-        plans: List[InvocationPlan] = []
-        initialized_nodes: Dict[str, str] = {}
 
-        for node, is_special_function in load_order:
-            resolved = self.node_resolver.resolve(node)
-            class_instance = resolved["class_instance"]
-            input_types = resolved["input_types"]
+def _determine_load_order(
+    nodes: Mapping[str, Dict[str, Any]],
+    node_class_mappings: Mapping[str, Any],
+    base_node_class_mappings: Mapping[str, Any],
+) -> list[tuple[Dict[str, Any], bool]]:
+    resolved_cache: Dict[str, Dict[str, Any]] = {}
+    visited: Dict[str, str] = {}
+    ordered_ids: list[str] = []
+    special_ids: list[str] = []
 
-            if node.class_type == "PreviewImage":
-                continue
+    def resolve_cached(node: Mapping[str, Any]) -> Dict[str, Any]:
+        node_id = node["node_id"]
+        if node_id not in resolved_cache:
+            resolved_cache[node_id] = _resolve_node(
+                node, node_class_mappings, base_node_class_mappings
+            )
+        return resolved_cache[node_id]
 
-            required_inputs = list((input_types or {}).get("required", {}).keys())
-            missing_required = [
-                input_name for input_name in required_inputs if input_name not in node.inputs
-            ]
-            if missing_required:
-                raise ExportStageError(
-                    "Workflow node is missing required inputs for export.",
-                    stage="normalize-inputs",
-                    node_id=node.node_id,
-                    class_type=node.class_type,
-                    details={"missing_inputs": missing_required},
-                )
-
-            if node.class_type not in initialized_nodes:
-                initializer_name = self.object_identifiers.allocate(
-                    node.class_type,
-                    prefix="node",
-                )
-                initialized_nodes[node.class_type] = initializer_name
-                if not resolved["is_custom"]:
-                    self.import_names.append(node.class_type)
-
-            filtered_inputs = self._filter_supported_inputs(node, resolved)
-            filtered_inputs = self._apply_hidden_inputs(filtered_inputs, input_types, resolved)
-
-            plans.append(
-                InvocationPlan(
-                    node=node,
-                    class_type=node.class_type,
-                    function_name=resolved["function_name"],
-                    is_custom=resolved["is_custom"],
-                    import_name=node.class_type if not resolved["is_custom"] else None,
-                    initializer_name=initialized_nodes[node.class_type],
-                    output_name=self.output_identifiers.allocate(
-                        f"{node.class_type}_{node.node_id}",
-                        prefix="result",
-                    ),
-                    inputs=filtered_inputs,
-                    is_special_function=is_special_function,
-                )
+    def visit(node_id: str) -> None:
+        state = visited.get(node_id)
+        if state == "done":
+            return
+        if state == "visiting":
+            raise ExportStageError(
+                "Workflow contains a cyclic dependency.",
+                stage="dependency",
+                node_id=node_id,
+            )
+        if node_id not in nodes:
+            raise ExportStageError(
+                "Workflow references a node that is not present.",
+                stage="dependency",
+                node_id=node_id,
             )
 
-        return plans
+        visited[node_id] = "visiting"
+        node = nodes[node_id]
+        for reference in _iter_references(node["inputs"]):
+            if reference.node_id not in nodes:
+                raise ExportStageError(
+                    "Workflow input references a missing upstream node.",
+                    stage="dependency",
+                    node_id=node_id,
+                    class_type=node["class_type"],
+                    details={"missing_node_id": reference.node_id},
+                )
+            visit(reference.node_id)
 
-    def _filter_supported_inputs(
-        self,
-        node: NormalizedNode,
-        resolved: Mapping[str, Any],
-    ) -> Dict[str, Any]:
-        if resolved["accepts_kwargs"]:
-            return dict(node.inputs)
+        visited[node_id] = "done"
+        ordered_ids.append(node_id)
 
-        supported_params = set(resolved["function_params"])
-        return {
-            key: value
-            for key, value in node.inputs.items()
-            if key in supported_params
-        }
+    for node_id, node in nodes.items():
+        resolved = resolve_cached(node)
+        if _is_special_node(node, resolved):
+            special_ids.append(node_id)
+        visit(node_id)
 
-    def _apply_hidden_inputs(
-        self,
-        inputs: Dict[str, Any],
-        input_types: Mapping[str, Any],
-        resolved: Mapping[str, Any],
-    ) -> Dict[str, Any]:
+    seen: set[str] = set()
+    ordered_nodes: list[tuple[Dict[str, Any], bool]] = []
+    for node_id in special_ids + ordered_ids:
+        if node_id in seen:
+            continue
+        ordered_nodes.append((nodes[node_id], node_id in special_ids))
+        seen.add(node_id)
+    return ordered_nodes
+
+
+def _render_value(value: Any, output_names: Mapping[str, str]) -> str:
+    if value == "__RANDOM_UNIQUE_ID__":
+        return "random.randint(1, 2**64)"
+    if isinstance(value, NodeReference):
+        return f'get_value_at_index({output_names[value.node_id]}, {value.output_index})'
+    if isinstance(value, str):
+        return json.dumps(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(_render_value(item, output_names) for item in value) + "]"
+    if isinstance(value, tuple):
+        return "(" + ", ".join(_render_value(item, output_names) for item in value) + ")"
+    if isinstance(value, dict):
+        items = ", ".join(
+            f"{json.dumps(str(key))}: {_render_value(item, output_names)}"
+            for key, item in value.items()
+        )
+        return "{" + items + "}"
+    return repr(value)
+
+
+def _format_argument(key: str, value: Any, output_names: Mapping[str, str]) -> str:
+    if key in {"seed", "noise_seed"}:
+        rendered_value = "random.randint(1, 2**64)"
+    else:
+        rendered_value = _render_value(value, output_names)
+    if key.isidentifier() and not keyword.iskeyword(key):
+        return f"{key}={rendered_value}"
+    return f"**{{{json.dumps(str(key))}: {rendered_value}}}"
+
+
+def _assemble_python_code(
+    *,
+    node_plans: list[dict[str, Any]],
+    import_names: set[str],
+    queue_size: int,
+) -> str:
+    imports = [
+        "import os",
+        "import random",
+        "import sys",
+        "from typing import Any, Mapping, Sequence, Union",
+        "import torch",
+        "",
+        inspect.getsource(get_value_at_index),
+        "",
+        inspect.getsource(normalize_path),
+        "",
+        inspect.getsource(find_path),
+        "",
+        inspect.getsource(find_comfyui_root),
+        "",
+        inspect.getsource(add_comfyui_directory_to_sys_path),
+        "",
+        inspect.getsource(add_extra_model_paths),
+        "",
+        "add_comfyui_directory_to_sys_path()",
+        "add_extra_model_paths()",
+    ]
+
+    if any(plan["is_custom"] for plan in node_plans):
+        imports.extend(["", inspect.getsource(import_custom_nodes), "", "import_custom_nodes()"])
+
+    node_imports = sorted(import_names | {"NODE_CLASS_MAPPINGS"})
+    imports.extend(["", f"from nodes import {', '.join(node_imports)}", ""])
+
+    output_names = {plan["node"]["node_id"]: plan["output_name"] for plan in node_plans}
+    initialized: set[str] = set()
+    initializer_lines: list[str] = []
+    special_lines: list[str] = []
+    regular_lines: list[str] = []
+
+    for plan in node_plans:
+        class_type = plan["node"]["class_type"]
+        if class_type not in initialized:
+            if plan["is_custom"]:
+                initializer_lines.append(
+                    f'{plan["initializer_name"]} = NODE_CLASS_MAPPINGS["{class_type}"]()'
+                )
+            else:
+                initializer_lines.append(f'{plan["initializer_name"]} = {class_type}()')
+            initialized.add(class_type)
+
+        rendered_inputs = ", ".join(
+            _format_argument(key, value, output_names)
+            for key, value in plan["inputs"].items()
+        )
+        target_lines = special_lines if plan["is_special"] else regular_lines
+        target_lines.append(
+            f'{plan["output_name"]} = {plan["initializer_name"]}.{plan["function_name"]}({rendered_inputs})'
+        )
+
+    main_lines = [
+        "def main():",
+        '    print("Generated by ComfyUI-to-Python-Extension.")',
+        "    with torch.inference_mode():",
+    ]
+    main_lines.extend(f"        {line}" for line in initializer_lines)
+    main_lines.extend(f"        {line}" for line in special_lines)
+    main_lines.append("")
+    main_lines.append(f"        for q in range({queue_size}):")
+    if regular_lines:
+        main_lines.extend(f"            {line}" for line in regular_lines)
+    else:
+        main_lines.append("            pass")
+
+    body = "\n".join(imports + main_lines + ["", 'if __name__ == "__main__":', "    main()"])
+    return black.format_str(body, mode=black.Mode())
+
+
+def _build_export(
+    *,
+    workflow_data: Mapping[str, Any],
+    output_file: str | TextIO,
+    queue_size: int,
+    node_class_mappings: Mapping[str, Any],
+    base_node_class_mappings: Mapping[str, Any],
+) -> ExportResult:
+    nodes = WorkflowNormalizer().normalize(workflow_data)
+    ordered_nodes = _determine_load_order(
+        nodes, node_class_mappings, base_node_class_mappings
+    )
+
+    initializer_names = IdentifierService()
+    output_names = IdentifierService()
+    initialized_nodes: Dict[str, str] = {}
+    import_names: set[str] = set()
+    node_plans: list[dict[str, Any]] = []
+
+    for node, is_special in ordered_nodes:
+        resolved = _resolve_node(node, node_class_mappings, base_node_class_mappings)
+        input_types = resolved["input_types"]
+        required_inputs = list((input_types or {}).get("required", {}).keys())
+        missing_required = [
+            input_name for input_name in required_inputs if input_name not in node["inputs"]
+        ]
+        if missing_required:
+            raise ExportStageError(
+                "Workflow node is missing required inputs for export.",
+                stage="normalize-inputs",
+                node_id=node["node_id"],
+                class_type=node["class_type"],
+                details={"missing_inputs": missing_required},
+            )
+
+        filtered_inputs = dict(node["inputs"])
+        if not resolved["accepts_kwargs"]:
+            supported_params = set(resolved["function_params"])
+            filtered_inputs = {
+                key: value
+                for key, value in filtered_inputs.items()
+                if key in supported_params
+            }
+
         hidden_inputs = (input_types or {}).get("hidden", {})
         supported_params = set(resolved["function_params"])
-
         if "unique_id" in hidden_inputs and (
             resolved["accepts_kwargs"] or "unique_id" in supported_params
         ):
-            inputs["unique_id"] = "__RANDOM_UNIQUE_ID__"
+            filtered_inputs["unique_id"] = "__RANDOM_UNIQUE_ID__"
 
-        return inputs
+        class_type = node["class_type"]
+        if class_type not in initialized_nodes:
+            initialized_nodes[class_type] = initializer_names.allocate(
+                class_type, prefix="node"
+            )
+            if not resolved["is_custom"]:
+                import_names.add(class_type)
 
-
-class ScriptAssembler:
-    def __init__(self, *, mode: str = "embedded") -> None:
-        self.mode = mode
-
-    def assemble(
-        self,
-        *,
-        invocation_plans: List[InvocationPlan],
-        import_names: List[str],
-        queue_size: int,
-        diagnostics: List[ExportDiagnostic],
-    ) -> str:
-        imports = [
-            "import os",
-            "import random",
-            "import sys",
-            "from typing import Any, Mapping, Sequence, Union",
-            "import torch",
-        ]
-
-        warnings_comment = self._build_warning_comment(diagnostics)
-        bootstrap_code = self._build_bootstrap(invocation_plans)
-        support_comment = self._build_support_table_comment()
-        node_imports = self._build_node_imports(import_names)
-        initializer_lines = self._build_initializer_lines(invocation_plans)
-        special_lines, regular_lines = self._build_invocation_lines(invocation_plans)
-
-        main_lines = [
-            "def main():",
-            '    print("Generated by ComfyUI-to-Python-Extension.")',
-            "    with torch.inference_mode():",
-        ]
-        if initializer_lines:
-            main_lines.extend(f"        {line}" for line in initializer_lines)
-        if special_lines:
-            main_lines.extend(f"        {line}" for line in special_lines)
-        main_lines.append("")
-        main_lines.append(f"        for q in range({queue_size}):")
-        if regular_lines:
-            main_lines.extend(f"            {line}" for line in regular_lines)
-        else:
-            main_lines.append("            pass")
-
-        body = "\n".join(
-            imports
-            + [""]
-            + warnings_comment
-            + support_comment
-            + [""]
-            + bootstrap_code
-            + [""]
-            + node_imports
-            + [""]
-            + main_lines
-            + ["", 'if __name__ == "__main__":', "    main()"]
+        node_plans.append(
+            {
+                "node": node,
+                "function_name": resolved["function_name"],
+                "initializer_name": initialized_nodes[class_type],
+                "output_name": output_names.allocate(
+                    f"{class_type}_{node['node_id']}", prefix="result"
+                ),
+                "inputs": filtered_inputs,
+                "is_custom": resolved["is_custom"],
+                "is_special": is_special,
+            }
         )
 
-        return black.format_str(body, mode=black.Mode())
-
-    def _build_warning_comment(
-        self,
-        diagnostics: List[ExportDiagnostic],
-    ) -> List[str]:
-        lines = [
-            "# Export warnings:",
-            "# - Generated scripts may not preserve ComfyUI cache behavior exactly.",
-            "# - Prompt metadata and extra PNG info may differ from the WebUI runtime.",
-            "# - Unsupported custom nodes will fail at export time with a structured error.",
-        ]
-        for diagnostic in diagnostics:
-            if diagnostic.level == "warning":
-                lines.append(f"# - {diagnostic.message}")
-        return lines
-
-    def _build_support_table_comment(self) -> List[str]:
-        return [
-            "# Support table:",
-            "# - fully supported: built-in nodes and custom nodes present in NODE_CLASS_MAPPINGS",
-            "# - exports with warnings: runtime metadata and cache-sensitive workflows",
-            "# - unsupported: node classes missing from the active ComfyUI environment",
-        ]
-
-    def _build_bootstrap(self, invocation_plans: List[InvocationPlan]) -> List[str]:
-        needs_custom_nodes = any(plan.is_custom for plan in invocation_plans)
-        if self.mode == "portable":
-            lines = [
-                "def bootstrap_environment():",
-                "    add_comfyui_directory_to_sys_path()",
-                "    add_extra_model_paths()",
-            ]
-            if needs_custom_nodes:
-                lines.append("    import_custom_nodes()")
-            lines.extend(["", "bootstrap_environment()"])
-            return lines
-
-        lines = [
-            inspect.getsource(get_value_at_index),
-            "",
-            inspect.getsource(normalize_path),
-            "",
-            inspect.getsource(find_path),
-            "",
-            inspect.getsource(find_comfyui_root),
-            "",
-            inspect.getsource(add_comfyui_directory_to_sys_path),
-            "",
-            inspect.getsource(add_extra_model_paths),
-            "",
-            "add_comfyui_directory_to_sys_path()",
-            "add_extra_model_paths()",
-        ]
-        if needs_custom_nodes:
-            lines.extend(["", inspect.getsource(import_custom_nodes), "", "import_custom_nodes()"])
-        return lines
-
-    def _build_node_imports(self, import_names: List[str]) -> List[str]:
-        unique_names = sorted(set(import_names) | {"NODE_CLASS_MAPPINGS"})
-        return [f"from nodes import {', '.join(unique_names)}"]
-
-    def _build_initializer_lines(
-        self,
-        invocation_plans: List[InvocationPlan],
-    ) -> List[str]:
-        initialized: Dict[str, str] = {}
-        lines: List[str] = []
-        for plan in invocation_plans:
-            if plan.class_type in initialized:
-                continue
-            initialized[plan.class_type] = plan.initializer_name
-            if plan.is_custom:
-                lines.append(
-                    f'{plan.initializer_name} = NODE_CLASS_MAPPINGS["{plan.class_type}"]()'
-                )
-            else:
-                lines.append(f"{plan.initializer_name} = {plan.class_type}()")
-        return lines
-
-    def _build_invocation_lines(
-        self,
-        invocation_plans: List[InvocationPlan],
-    ) -> tuple[List[str], List[str]]:
-        output_lookup = {
-            plan.node.node_id: plan.output_name
-            for plan in invocation_plans
-        }
-        special_lines: List[str] = []
-        regular_lines: List[str] = []
-        for plan in invocation_plans:
-            rendered_inputs = ", ".join(
-                self._format_argument(key, value, output_lookup)
-                for key, value in plan.inputs.items()
-            )
-            call = (
-                f"{plan.output_name} = "
-                f"{plan.initializer_name}.{plan.function_name}({rendered_inputs})"
-            )
-            target = special_lines if plan.is_special_function else regular_lines
-            target.append(call)
-        return special_lines, regular_lines
-
-    def _format_argument(
-        self,
-        key: str,
-        value: Any,
-        output_lookup: Mapping[str, str],
-    ) -> str:
-        rendered_value = self._render_value(value, output_lookup)
-        if self._is_safe_keyword_argument(key):
-            return f"{key}={rendered_value}"
-        return f"**{{{json.dumps(str(key))}: {rendered_value}}}"
-
-    @staticmethod
-    def _is_safe_keyword_argument(key: str) -> bool:
-        return key.isidentifier() and not keyword.iskeyword(key)
-
-    def _render_value(
-        self,
-        value: Any,
-        output_lookup: Mapping[str, str],
-    ) -> str:
-        if value == "__RANDOM_UNIQUE_ID__":
-            return "random.randint(1, 2**64)"
-        if isinstance(value, NodeReference):
-            return (
-                f'get_value_at_index({output_lookup[value.node_id]}, {value.output_index})'
-            )
-        if isinstance(value, str):
-            if value in {"__RANDOM_SEED__", "__RANDOM_NOISE_SEED__"}:
-                return "random.randint(1, 2**64)"
-            return json.dumps(value)
-        if isinstance(value, list):
-            return "[" + ", ".join(self._render_value(item, output_lookup) for item in value) + "]"
-        if isinstance(value, tuple):
-            return "(" + ", ".join(self._render_value(item, output_lookup) for item in value) + ")"
-        if isinstance(value, dict):
-            items = ", ".join(
-                f"{json.dumps(str(key))}: {self._render_value(item, output_lookup)}"
-                for key, item in value.items()
-            )
-            return "{" + items + "}"
-        return repr(value)
+    code = _assemble_python_code(
+        node_plans=node_plans,
+        import_names=import_names,
+        queue_size=queue_size,
+    )
+    FileHandler.write_code_to_file(output_file, code)
+    return ExportResult(code=code, diagnostics=[])
 
 
 class ComfyUItoPython:
@@ -776,50 +579,37 @@ class ComfyUItoPython:
         self.input_file = input_file
         self.output_file = output_file
         self.queue_size = queue_size
-        self.node_class_mappings = dict(node_class_mappings or COMFY_NODE_CLASS_MAPPINGS)
         self.needs_init_custom_nodes = needs_init_custom_nodes
-        self.base_node_class_mappings = copy.deepcopy(self.node_class_mappings)
+
+        if node_class_mappings is None:
+            self.node_class_mappings = dict(COMFY_NODE_CLASS_MAPPINGS)
+            self.base_node_class_mappings = dict(COMFY_NODE_CLASS_MAPPINGS)
+        else:
+            self.node_class_mappings = dict(node_class_mappings)
+            self.base_node_class_mappings = {}
+
         self.result = self.execute()
 
     def execute(self) -> ExportResult:
         if self.needs_init_custom_nodes:
+            built_in_nodes = copy.deepcopy(self.base_node_class_mappings)
             import_custom_nodes()
-            if not self.node_class_mappings:
-                try:
-                    from nodes import NODE_CLASS_MAPPINGS as live_node_mappings
+            try:
+                from nodes import NODE_CLASS_MAPPINGS as live_node_class_mappings
 
-                    self.node_class_mappings = dict(live_node_mappings)
-                    self.base_node_class_mappings = dict(live_node_mappings)
-                except Exception:
-                    pass
-        elif self.node_class_mappings:
-            self.base_node_class_mappings = {}
+                self.node_class_mappings = dict(live_node_class_mappings)
+                self.base_node_class_mappings = built_in_nodes
+            except Exception:
+                pass
 
         workflow_data = self._read_workflow_data()
-        diagnostics = [
-            ExportDiagnostic(
-                level="warning",
-                message="Portable script mode is scaffolded internally but embedded mode remains the default.",
-                stage="assemble",
-            )
-        ]
-        normalizer = WorkflowNormalizer()
-        normalized_nodes = normalizer.normalize(workflow_data)
-        node_resolver = NodeResolver(
-            self.node_class_mappings,
-            self.base_node_class_mappings,
-        )
-        load_order = LoadOrderResolver().resolve(normalized_nodes, node_resolver)
-        invocation_planner = InvocationPlanner(node_resolver)
-        invocation_plans = invocation_planner.build(load_order)
-        code = ScriptAssembler(mode="embedded").assemble(
-            invocation_plans=invocation_plans,
-            import_names=invocation_planner.import_names,
+        return _build_export(
+            workflow_data=workflow_data,
+            output_file=self.output_file,
             queue_size=self.queue_size,
-            diagnostics=diagnostics,
+            node_class_mappings=self.node_class_mappings,
+            base_node_class_mappings=self.base_node_class_mappings,
         )
-        FileHandler.write_code_to_file(self.output_file, code)
-        return ExportResult(code=code, diagnostics=diagnostics)
 
     def _read_workflow_data(self) -> Mapping[str, Any]:
         try:
@@ -863,7 +653,6 @@ def export_workflow(
 def format_export_exception(exc: Exception) -> Dict[str, Any]:
     if isinstance(exc, ExportStageError):
         return exc.to_payload()
-
     return {
         "error": str(exc),
         "stage": "unexpected",

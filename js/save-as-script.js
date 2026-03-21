@@ -16,10 +16,6 @@ const extension = {
 			commands: ["triggerSaveAsScript"]
 		}
 	],
-	init() {
-		const style = document.createElement("style");
-		document.head.appendChild(style);
-	},
 	async getPromptPayload() {
 		const graphToPrompt = app.graphToPrompt?.bind(app);
 		if (!graphToPrompt) {
@@ -70,19 +66,19 @@ const extension = {
 		return anchor;
 	},
 	async savePythonScript() {
-		var filename = prompt("Save script as:");
-		if(filename === undefined || filename === null || filename === "") {
-			return
+		let filename = prompt("Save script as:");
+		if (filename === undefined || filename === null || filename === "") {
+			return;
 		}
 
 		try {
 			const workflow = await extension.getPromptPayload();
 			const json = JSON.stringify({name: filename + ".json", workflow: JSON.stringify(workflow, null, 2)}, null, 2);
-			var response = await extension.postSaveAsScript(json);
-			if(response.status == 200) {
+			const response = await extension.postSaveAsScript(json);
+			if (response.status === 200) {
 				const blob = new Blob([await response.text()], {type: "text/python;charset=utf-8"});
 				const url = URL.createObjectURL(blob);
-				if(!filename.endsWith(".py")) {
+				if (!filename.endsWith(".py")) {
 					filename += ".py";
 				}
 

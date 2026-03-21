@@ -1,6 +1,7 @@
 import sys
 import os
 import traceback
+from io import StringIO
 
 from aiohttp import web
 
@@ -26,7 +27,7 @@ except ImportError:
 # Prevent reimporting of custom nodes
 os.environ["RUNNING_IN_COMFYUI"] = "TRUE"
 
-from save_as_script_api import generate_script_response_payload
+from comfyui_to_python import export_workflow, format_export_exception
 
 sys.path.append(os.path.dirname(os.path.dirname(ext_dir)))
 
@@ -41,17 +42,11 @@ async def save_as_script(request):
     try:
         data = await request.json()
         workflow = data["workflow"]
-        payload = generate_script_response_payload(workflow)
-        if payload["ok"]:
-            return web.Response(text=payload["code"], status=200)
-        return web.json_response(payload, status=400)
-    except Exception as e:
+        output = StringIO()
+        result = export_workflow(workflow=workflow, output_file=output)
+        return web.Response(text=result.code, status=200)
+    except Exception as exc:
         traceback.print_exc()
-        return web.json_response(
-            {
-                "ok": False,
-                "error": str(e),
-                "stage": "unexpected",
-            },
-            status=500,
-        )
+        payload = format_export_exception(exc)
+        status = 400 if payload.get("stage") != "unexpected" else 500
+        return web.json_response(payload, status=status)
