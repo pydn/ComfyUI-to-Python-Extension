@@ -48,7 +48,16 @@ url = "https://raw.githubusercontent.com/Comfy-Org/ComfyUI/master/tests/inferenc
 path = "input/example.png"
 tier = 1
 
+[[assets]]
+name = "integration-test-checkpoint"
+kind = "url"
+url = "https://huggingface.co/Comfy-Org/stable-diffusion-v1-5-archive/resolve/main/v1-5-pruned-emaonly-fp16.safetensors"
+path = "models/checkpoints/integration-test.safetensors"
+tier = 2
+sha256 = "e9476a13728cd75d8279f6ec8bad753a66a1957ca375a1464dc63b37db6e3916"
+
 # Tier 1 integration scenarios currently validate export and HTTP behavior.
 # They require real node classes and filesystem layout, but they do not require
 # heavyweight checkpoint downloads yet because the harness does not execute
-# generation. Add model assets here as runtime scenarios are introduced.
+# generation. Tier 2 adds model-backed runtime scenarios and will download a
+# pinned Stable Diffusion v1.5 checkpoint automatically during bootstrap.

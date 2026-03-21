@@ -11,6 +11,7 @@ file to `integration_tests/environment.lock.json`.
 
 - Tier 1 baseline export with built-in nodes
 - Tier 1 HTTP `/api/saveasscript` and `/saveasscript` route coverage
+- Tier 1 generated-script execution against a real ComfyUI runtime
 - Tier 1 core upscale export
 - Tier 1 known-failure scenarios for invalid custom-node input names
 - Tier 1 Windows-style path portability fixture
@@ -60,6 +61,10 @@ COMFYUI_PATH=.integration-env/ComfyUI \
 uv run python integration_tests/run_against_comfyui.py
 ```
 
+The matrix now includes a lightweight execution smoke test that exports a
+workflow, runs the generated Python script, and verifies a new file appears in
+`ComfyUI/output/`.
+
 Run a specific scenario:
 
 ```bash
@@ -92,3 +97,26 @@ The current matrix is enough to start running real integration checks, but sever
 - runtime parity and metadata fixtures
 - Desktop-specific menu-action smoke tests
 - heavyweight runtime model assets for end-to-end image generation
+
+## Model-backed runtime tests
+
+The current execution lane uses the bundled example input image and built-in
+nodes, so it does not require checkpoints or upscaler weights yet. If you want
+true model-backed end-to-end generation coverage, add those assets to
+`integration_tests/environment.toml` and introduce `execution` scenarios that
+reference workflows using them.
+
+This repo now includes a tier-2 checkpoint execution scenario. Bootstrap tier 2
+to download a pinned Stable Diffusion v1.5 checkpoint into the bootstrapped
+ComfyUI tree:
+
+```bash
+uv run python integration_tests/bootstrap_env.py --tier 2
+```
+
+Then run the checkpoint-backed scenario:
+
+```bash
+COMFYUI_PATH=.integration-env/ComfyUI \
+uv run python integration_tests/run_against_comfyui.py --scenario checkpoint_execution
+```

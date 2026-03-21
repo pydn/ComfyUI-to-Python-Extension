@@ -2,6 +2,7 @@ import argparse
 import ast
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import urllib.error
@@ -31,6 +32,8 @@ class Scenario:
     tier: int = 1
     covers: list[str] = field(default_factory=list)
     required_node_packs: list[str] = field(default_factory=list)
+    required_assets: list[str] = field(default_factory=list)
+    output_prefix: str | None = None
 
     @property
     def workflow_path(self) -> Path:
@@ -108,6 +111,90 @@ def run_export_scenario(scenario: Scenario) -> ScenarioResult:
             status="pass",
             detail=f"Generated {len(code.splitlines())} lines of Python.",
         )
+
+
+def run_execution_scenario(scenario: Scenario, comfyui_path: Path) -> ScenarioResult:
+    workflow_text = scenario.workflow_path.read_text(encoding="utf-8")
+    output_prefix = scenario.output_prefix
+    if not output_prefix:
+        return ScenarioResult(
+            scenario=scenario,
+            status="fail",
+            detail="Execution scenario is missing an output_prefix.",
+        )
+
+    output_dir = comfyui_path / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    before_files = {
+        path.name
+        for path in output_dir.glob(f"{output_prefix}*")
+        if path.is_file()
+    }
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        script_path = Path(tmp_dir) / f"{scenario.id}.py"
+        try:
+            export_workflow(
+                workflow=workflow_text,
+                output_file=str(script_path),
+                queue_size=1,
+                needs_init_custom_nodes=True,
+            )
+        except Exception as exc:
+            payload = format_export_exception(exc)
+            return ScenarioResult(
+                scenario=scenario,
+                status="fail",
+                detail=f"Failed to export runtime script:\n{json.dumps(payload, indent=2)}",
+            )
+
+        env = os.environ.copy()
+        env["COMFYUI_PATH"] = str(comfyui_path)
+        completed = subprocess.run(
+            [sys.executable, str(script_path)],
+            cwd=str(ROOT),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=180,
+        )
+
+    if completed.returncode != 0:
+        detail = "\n".join(
+            part
+            for part in (
+                f"Generated script exited with code {completed.returncode}.",
+                f"stdout:\n{completed.stdout.strip()}" if completed.stdout.strip() else "",
+                f"stderr:\n{completed.stderr.strip()}" if completed.stderr.strip() else "",
+            )
+            if part
+        )
+        return ScenarioResult(scenario=scenario, status="fail", detail=detail)
+
+    after_files = {
+        path.name
+        for path in output_dir.glob(f"{output_prefix}*")
+        if path.is_file()
+    }
+    new_files = sorted(after_files - before_files)
+    if not new_files:
+        detail = "\n".join(
+            part
+            for part in (
+                f"Generated script completed but no new output files matched prefix {output_prefix!r}.",
+                f"stdout:\n{completed.stdout.strip()}" if completed.stdout.strip() else "",
+                f"stderr:\n{completed.stderr.strip()}" if completed.stderr.strip() else "",
+            )
+            if part
+        )
+        return ScenarioResult(scenario=scenario, status="fail", detail=detail)
+
+    return ScenarioResult(
+        scenario=scenario,
+        status="pass",
+        detail=f"Generated script created {len(new_files)} output file(s): {', '.join(new_files)}",
+    )
 
 
 def is_expected_known_failure(payload: dict[str, Any]) -> bool:
@@ -212,6 +299,19 @@ def run_scenarios(
             )
             continue
 
+        missing_assets = [
+            asset for asset in scenario.required_assets if not (comfyui_path / asset).exists()
+        ]
+        if missing_assets:
+            results.append(
+                ScenarioResult(
+                    scenario=scenario,
+                    status="skip",
+                    detail=f"Missing required assets: {', '.join(missing_assets)}",
+                )
+            )
+            continue
+
         if scenario.kind == "http":
             if not base_url:
                 results.append(
@@ -223,6 +323,9 @@ def run_scenarios(
                 )
                 continue
             results.append(run_http_scenario(scenario, base_url))
+            continue
+        if scenario.kind == "execution":
+            results.append(run_execution_scenario(scenario, comfyui_path))
             continue
 
         results.append(run_export_scenario(scenario))

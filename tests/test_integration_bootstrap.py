@@ -30,6 +30,20 @@ class IntegrationBootstrapTests(unittest.TestCase):
             self.assertNotIn("..", entry["path"])
             self.assertIn("/", entry["path"])
 
+    def test_tier_two_checkpoint_asset_is_downloadable(self):
+        manifest = tomllib.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        checkpoint_assets = [
+            entry
+            for entry in manifest["assets"]
+            if entry["name"] == "integration-test-checkpoint"
+        ]
+        self.assertEqual(len(checkpoint_assets), 1)
+        checkpoint = checkpoint_assets[0]
+        self.assertEqual(checkpoint["kind"], "url")
+        self.assertIn("url", checkpoint)
+        self.assertIn("sha256", checkpoint)
+        self.assertEqual(checkpoint["tier"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

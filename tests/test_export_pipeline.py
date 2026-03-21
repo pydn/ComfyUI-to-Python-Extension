@@ -94,6 +94,22 @@ class ImageUpscaler:
         return (f"{upscale_model}:{image}",)
 
 
+class FancyCustomSampler:
+    CATEGORY = "custom/sampling"
+    FUNCTION = "sample"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "seed": ("INT",),
+            }
+        }
+
+    def sample(self, seed, **kwargs):
+        return (f"{seed}:{kwargs}",)
+
+
 NODE_CLASS_MAPPINGS = {
     "CheckpointLoaderSimple": CheckpointLoaderSimple,
     "CLIPTextEncode": CLIPTextEncode,
@@ -101,6 +117,8 @@ NODE_CLASS_MAPPINGS = {
     "SubgraphBridge": SubgraphBridge,
     "UpscaleModelLoader": UpscaleModelLoader,
     "ImageUpscaler": ImageUpscaler,
+    "Power Lora Loader (rgthree)": FancyCustomSampler,
+    "Anything Everywhere": FancyCustomSampler,
 }
 
 
@@ -166,6 +184,60 @@ class ExportPipelineTests(unittest.TestCase):
             ast.parse(code)
             self.assertIn('NODE_CLASS_MAPPINGS["UpscaleModelLoader"]()', code)
             self.assertIn("imageupscaler_2", code)
+
+    def test_export_workflow_uses_dict_unpack_for_non_python_safe_input_keys(self):
+        workflow = json.dumps(
+            {
+                "1": {
+                    "class_type": "Power Lora Loader (rgthree)",
+                    "inputs": {
+                        "seed": 1,
+                        "➕ Add Lora": "foo.safetensors",
+                        "in": "reserved",
+                    },
+                }
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_path = Path(tmp_dir) / "workflow.py"
+            export_workflow(
+                workflow=workflow,
+                output_file=str(output_path),
+                node_class_mappings=NODE_CLASS_MAPPINGS,
+            )
+
+            code = output_path.read_text(encoding="utf-8")
+            ast.parse(code)
+            self.assertIn('NODE_CLASS_MAPPINGS[', code)
+            self.assertIn('"Power Lora Loader (rgthree)"', code)
+            self.assertIn('**{"\\u2795 Add Lora": "foo.safetensors"}', code)
+            self.assertIn('**{"in": "reserved"}', code)
+            self.assertNotIn("➕ Add Lora=", code)
+            self.assertNotIn("in=", code)
+
+    def test_export_workflow_keeps_valid_keyword_arguments(self):
+        workflow = json.dumps(
+            {
+                "1": {
+                    "class_type": "Anything Everywhere",
+                    "inputs": {
+                        "seed": 1,
+                        "safe_name": "kept-as-kwarg",
+                    },
+                }
+            }
+        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_path = Path(tmp_dir) / "workflow.py"
+            export_workflow(
+                workflow=workflow,
+                output_file=str(output_path),
+                node_class_mappings=NODE_CLASS_MAPPINGS,
+            )
+
+            code = output_path.read_text(encoding="utf-8")
+            ast.parse(code)
+            self.assertIn('safe_name="kept-as-kwarg"', code)
 
     def test_missing_custom_node_returns_structured_error(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

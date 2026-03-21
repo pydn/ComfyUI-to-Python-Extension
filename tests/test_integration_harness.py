@@ -25,6 +25,22 @@ class IntegrationHarnessTests(unittest.TestCase):
         for scenario in known_failures:
             self.assertEqual(scenario["tier"], 1)
 
+    def test_execution_scenarios_define_output_prefix(self):
+        scenarios = json.loads(SCENARIOS_PATH.read_text(encoding="utf-8"))
+        execution_scenarios = [scenario for scenario in scenarios if scenario["kind"] == "execution"]
+        self.assertGreater(len(execution_scenarios), 0)
+        for scenario in execution_scenarios:
+            self.assertTrue(scenario.get("output_prefix"))
+
+    def test_scenarios_with_required_assets_use_nonempty_paths(self):
+        scenarios = json.loads(SCENARIOS_PATH.read_text(encoding="utf-8"))
+        asset_bound = [scenario for scenario in scenarios if scenario.get("required_assets")]
+        self.assertGreater(len(asset_bound), 0)
+        for scenario in asset_bound:
+            for asset in scenario["required_assets"]:
+                self.assertTrue(asset)
+                self.assertNotIn("..", asset)
+
 
 if __name__ == "__main__":
     unittest.main()

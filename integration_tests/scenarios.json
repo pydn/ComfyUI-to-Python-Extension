@@ -28,6 +28,27 @@
     "required_node_packs": []
   },
   {
+    "id": "image_roundtrip_execution",
+    "title": "Image roundtrip generated-script execution",
+    "kind": "execution",
+    "workflow": "integration_tests/fixtures/image_roundtrip_execution_workflow.json",
+    "expected": "success",
+    "tier": 1,
+    "covers": ["runtime smoke", "generated script execution"],
+    "output_prefix": "integration_roundtrip"
+  },
+  {
+    "id": "checkpoint_execution",
+    "title": "Checkpoint-backed generated-script execution",
+    "kind": "execution",
+    "workflow": "integration_tests/fixtures/checkpoint_execution_workflow.json",
+    "expected": "success",
+    "tier": 2,
+    "covers": ["runtime smoke", "checkpoint inference"],
+    "required_assets": ["models/checkpoints/integration-test.safetensors"],
+    "output_prefix": "integration_checkpoint"
+  },
+  {
     "id": "power_lora_invalid_kwargs",
     "title": "Power Lora emoji input kwargs",
     "kind": "export",

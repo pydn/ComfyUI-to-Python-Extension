@@ -36,6 +36,8 @@ class AssetSpec:
     tier: int = 1
     url: str | None = None
     sha256: str | None = None
+    source: Path | None = None
+    optional: bool = False
 
 
 @dataclass
@@ -110,11 +112,26 @@ def sha256_for(path: Path) -> str:
 
 def ensure_asset(spec: AssetSpec) -> dict[str, Any]:
     spec.path.parent.mkdir(parents=True, exist_ok=True)
-    if spec.kind != "url" or not spec.url:
+    if spec.kind == "url" and spec.url:
+        if not spec.path.exists():
+            with urllib.request.urlopen(spec.url, timeout=60) as response:
+                spec.path.write_bytes(response.read())
+    elif spec.kind == "local" and spec.source:
+        if not spec.source.exists():
+            if spec.optional:
+                return {
+                    "name": spec.name,
+                    "path": str(spec.path),
+                    "kind": spec.kind,
+                    "source": str(spec.source),
+                    "optional": True,
+                    "present": False,
+                }
+            raise ValueError(f"Missing local asset source for {spec.name}: {spec.source}")
+        if not spec.path.exists():
+            shutil.copy2(spec.source, spec.path)
+    else:
         raise ValueError(f"Unsupported asset spec: {spec}")
-    if not spec.path.exists():
-        with urllib.request.urlopen(spec.url, timeout=60) as response:
-            spec.path.write_bytes(response.read())
 
     checksum = sha256_for(spec.path)
     if spec.sha256 and checksum != spec.sha256:
@@ -126,6 +143,9 @@ def ensure_asset(spec: AssetSpec) -> dict[str, Any]:
         "path": str(spec.path),
         "kind": spec.kind,
         "url": spec.url,
+        "source": str(spec.source) if spec.source else None,
+        "optional": spec.optional,
+        "present": True,
         "sha256": checksum,
         "size": spec.path.stat().st_size,
     }
@@ -198,8 +218,10 @@ def parse_specs(
                 kind=entry["kind"],
                 url=entry.get("url"),
                 sha256=entry.get("sha256"),
+                source=(ROOT / entry["source"]).resolve() if entry.get("source") else None,
                 path=comfyui_path / entry["path"],
                 tier=entry.get("tier", 1),
+                optional=entry.get("optional", False),
             )
         )
 

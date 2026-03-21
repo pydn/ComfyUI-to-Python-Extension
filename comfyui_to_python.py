@@ -718,7 +718,14 @@ class ScriptAssembler:
         value: Any,
         output_lookup: Mapping[str, str],
     ) -> str:
-        return f"{key}={self._render_value(value, output_lookup)}"
+        rendered_value = self._render_value(value, output_lookup)
+        if self._is_safe_keyword_argument(key):
+            return f"{key}={rendered_value}"
+        return f"**{{{json.dumps(str(key))}: {rendered_value}}}"
+
+    @staticmethod
+    def _is_safe_keyword_argument(key: str) -> bool:
+        return key.isidentifier() and not keyword.iskeyword(key)
 
     def _render_value(
         self,
