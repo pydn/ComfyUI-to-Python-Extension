@@ -1,0 +1,69 @@
+[
+  {
+    "id": "baseline_export",
+    "title": "Baseline built-in export",
+    "kind": "export",
+    "workflow": "integration_tests/fixtures/baseline_export_workflow.json",
+    "expected": "success",
+    "tier": 1,
+    "covers": ["baseline smoke", "#141"]
+  },
+  {
+    "id": "baseline_http_export",
+    "title": "Baseline HTTP save route",
+    "kind": "http",
+    "workflow": "integration_tests/fixtures/baseline_export_workflow.json",
+    "expected": "success",
+    "tier": 1,
+    "covers": ["#141", "#137", "#138"]
+  },
+  {
+    "id": "core_upscale_export",
+    "title": "Core upscale export",
+    "kind": "export",
+    "workflow": "integration_tests/fixtures/core_upscale_workflow.json",
+    "expected": "success",
+    "tier": 1,
+    "covers": ["#143", "#98"],
+    "required_node_packs": []
+  },
+  {
+    "id": "power_lora_invalid_kwargs",
+    "title": "Power Lora emoji input kwargs",
+    "kind": "export",
+    "workflow": "integration_tests/fixtures/power_lora_invalid_kwargs_workflow.json",
+    "expected": "known_failure",
+    "tier": 1,
+    "covers": ["#96", "#119"],
+    "required_node_packs": ["rgthree"]
+  },
+  {
+    "id": "easy_anything_reserved_word",
+    "title": "Easy Anything reserved-word input",
+    "kind": "export",
+    "workflow": "integration_tests/fixtures/easy_anything_reserved_word_workflow.json",
+    "expected": "known_failure",
+    "tier": 1,
+    "covers": ["#92"],
+    "required_node_packs": ["easy-use"]
+  },
+  {
+    "id": "impact_wildcard_invalid_kwargs",
+    "title": "Impact wildcard invalid kwargs",
+    "kind": "export",
+    "workflow": "integration_tests/fixtures/impact_wildcard_invalid_kwargs_workflow.json",
+    "expected": "known_failure",
+    "tier": 1,
+    "covers": ["#91"],
+    "required_node_packs": ["impact-pack"]
+  },
+  {
+    "id": "windows_portable_paths",
+    "title": "Windows-style path portability",
+    "kind": "export",
+    "workflow": "integration_tests/fixtures/windows_portable_workflow.json",
+    "expected": "success",
+    "tier": 1,
+    "covers": ["#93", "#104", "#105"]
+  }
+]

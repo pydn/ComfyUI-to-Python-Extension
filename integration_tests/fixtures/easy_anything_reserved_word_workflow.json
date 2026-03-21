@@ -1,0 +1,9 @@
+{
+  "1": {
+    "class_type": "easy_anything inversed switch",
+    "inputs": {
+      "in": "placeholder",
+      "toggle": true
+    }
+  }
+}

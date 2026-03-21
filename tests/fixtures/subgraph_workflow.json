@@ -1,0 +1,31 @@
+{
+  "1": {
+    "class_type": "CheckpointLoaderSimple",
+    "inputs": {
+      "ckpt_name": "model.safetensors"
+    }
+  },
+  "2": {
+    "class_type": "SubgraphBridge",
+    "inputs": {
+      "source": {
+        "node_id": "1",
+        "output_index": 0
+      }
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "seed": 1,
+      "model": {
+        "node_id": "2",
+        "output_index": 0
+      },
+      "positive": {
+        "node_id": "2",
+        "output_index": 0
+      }
+    }
+  }
+}

@@ -1,0 +1,54 @@
+[workspace]
+root = ".integration-env"
+cache = ".integration-cache"
+
+[comfyui]
+repo = "https://github.com/Comfy-Org/ComfyUI.git"
+ref = "master"
+path = "ComfyUI"
+
+[local_extension]
+source = "."
+path = "custom_nodes/ComfyUI-to-Python-Extension"
+
+[[custom_nodes]]
+name = "rgthree"
+repo = "https://github.com/rgthree/rgthree-comfy.git"
+ref = "main"
+path = "custom_nodes/rgthree-comfy"
+tier = 1
+
+[[custom_nodes]]
+name = "easy-use"
+repo = "https://github.com/yolain/ComfyUI-Easy-Use.git"
+ref = "main"
+path = "custom_nodes/ComfyUI-Easy-Use"
+tier = 1
+requirements = ["requirements.txt"]
+
+[[custom_nodes]]
+name = "impact-pack"
+repo = "https://github.com/ltdrdata/ComfyUI-Impact-Pack.git"
+ref = "Main"
+path = "custom_nodes/ComfyUI-Impact-Pack"
+tier = 1
+python_packages = [
+  "segment-anything",
+  "scikit-image",
+  "piexif",
+  "opencv-python-headless",
+  "dill",
+  "matplotlib",
+]
+
+[[assets]]
+name = "example-input-image"
+kind = "url"
+url = "https://raw.githubusercontent.com/Comfy-Org/ComfyUI/master/tests/inference/sd3d_example.png"
+path = "input/example.png"
+tier = 1
+
+# Tier 1 integration scenarios currently validate export and HTTP behavior.
+# They require real node classes and filesystem layout, but they do not require
+# heavyweight checkpoint downloads yet because the harness does not execute
+# generation. Add model assets here as runtime scenarios are introduced.
