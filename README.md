@@ -110,6 +110,8 @@ export COMFYUI_PATH=/path/to/ComfyUI
 
 The generated script is a workflow export. It does not automatically turn workflow inputs into command-line arguments.
 
+Scripts exported directly from `File -> Save As Script` in the ComfyUI UI already include the frontend workflow metadata needed for drag-and-drop reimport. Images saved by those scripts can be dropped back into ComfyUI and reopen with the original workflow metadata.
+
 ## Troubleshooting
 
 - `Save As Script` not visible:

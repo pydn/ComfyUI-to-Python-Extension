@@ -2,6 +2,7 @@ import copy
 import glob
 import inspect
 import json
+import keyword
 import os
 import random
 import sys
@@ -193,9 +194,20 @@ class CodeGenerator:
         self.node_class_mappings = node_class_mappings
         self.base_node_class_mappings = base_node_class_mappings
 
+    @staticmethod
+    def sanitize_node_id(node_id: str) -> str:
+        """Convert node IDs into variable-safe tokens without collapsing separators."""
+        sanitized = re.sub(r"[^a-z0-9_]", "_", str(node_id).lower().strip())
+        sanitized = re.sub(r"_+", "_", sanitized).strip("_")
+        if not sanitized:
+            sanitized = "node"
+        return sanitized
+
     def generate_workflow(
         self,
         load_order: List,
+        workflow_data: Dict,
+        metadata_workflow_data: Dict | None = None,
         queue_size: int = 10,
     ) -> str:
         """Generate the execution code based on the load order.
@@ -209,7 +221,7 @@ class CodeGenerator:
         """
         # Create the necessary data structures to hold imports and generated code
         import_statements, executed_variables, special_functions_code, code = (
-            set(["NODE_CLASS_MAPPINGS"]),
+            {"nodes": {"NODE_CLASS_MAPPINGS"}},
             {},
             [],
             [],
@@ -245,8 +257,9 @@ class CodeGenerator:
                 )
                 initialized_objects[class_type] = self.clean_variable_name(class_type)
                 if class_type in self.base_node_class_mappings.keys():
-                    import_statements.add(import_statement)
-                if class_type not in self.base_node_class_mappings.keys():
+                    module_name, import_name = import_statement
+                    import_statements.setdefault(module_name, set()).add(import_name)
+                if 'NODE_CLASS_MAPPINGS["' in class_code:
                     custom_nodes = True
                 special_functions_code.append(class_code)
 
@@ -263,20 +276,35 @@ class CodeGenerator:
                 if no_params or key in class_def_params
             }
             # Deal with hidden variables
+            hidden_inputs = input_types.get("hidden", {})
             if (
-                "hidden" in input_types.keys()
-                and "unique_id" in input_types["hidden"].keys()
+                "unique_id" in hidden_inputs
+                and (no_params or "unique_id" in class_def_params)
             ):
                 inputs["unique_id"] = random.randint(1, 2**64)
-            elif class_def_params is not None:
+            if "prompt" in hidden_inputs and (no_params or "prompt" in class_def_params):
+                inputs["prompt"] = {"variable_name": "prompt"}
+            if "extra_pnginfo" in hidden_inputs and (
+                no_params or "extra_pnginfo" in class_def_params
+            ):
+                inputs["extra_pnginfo"] = {"variable_name": "extra_pnginfo"}
+            if "hidden" not in input_types and class_def_params is not None:
                 if "unique_id" in class_def_params:
                     inputs["unique_id"] = random.randint(1, 2**64)
 
             # Create executed variable and generate code
-            executed_variables[idx] = f"{self.clean_variable_name(class_type)}_{idx}"
+            executed_variables[idx] = (
+                f"{self.clean_variable_name(class_type)}_"
+                f"{self.sanitize_node_id(str(idx))}"
+            )
             inputs = self.update_inputs(inputs, executed_variables)
+            seed_sync_code = self.create_prompt_seed_sync_code(
+                idx, inputs, is_special_function
+            )
 
             if is_special_function:
+                if seed_sync_code:
+                    special_functions_code.extend(seed_sync_code)
                 special_functions_code.append(
                     self.create_function_call_code(
                         initialized_objects[class_type],
@@ -287,6 +315,8 @@ class CodeGenerator:
                     )
                 )
             else:
+                if seed_sync_code:
+                    code.extend(seed_sync_code)
                 code.append(
                     self.create_function_call_code(
                         initialized_objects[class_type],
@@ -302,6 +332,8 @@ class CodeGenerator:
             import_statements,
             special_functions_code,
             code,
+            workflow_data,
+            metadata_workflow_data,
             queue_size,
             custom_nodes,
         )
@@ -340,6 +372,28 @@ class CodeGenerator:
 
         return code
 
+    def create_prompt_seed_sync_code(
+        self, node_id: str, inputs: Dict, is_special_function: bool
+    ) -> List[str]:
+        """Generate code that keeps prompt metadata aligned with randomized seeds."""
+        seed_sync_lines = []
+        for key in ("seed", "noise_seed"):
+            if key not in inputs:
+                continue
+            randomized_seed_variable = (
+                f"node_{self.sanitize_node_id(str(node_id))}_{self.clean_variable_name(key)}"
+            )
+            seed_sync_lines.append(
+                f'{randomized_seed_variable} = prompt["{node_id}"]["inputs"]["{key}"] = random.randint(1, 2**64)'
+            )
+            inputs[key] = {"variable_name": randomized_seed_variable}
+
+        if not seed_sync_lines:
+            return []
+
+        indentation = "" if is_special_function else "\t"
+        return [f"{indentation}{line}\n" for line in seed_sync_lines]
+
     def format_arg(self, key: str, value: any) -> str:
         """Formats arguments based on key and value.
 
@@ -350,35 +404,56 @@ class CodeGenerator:
         Returns:
             str: Formatted argument as a string.
         """
+        value_code = self.format_arg_value(key, value)
+        if key.isidentifier() and not keyword.iskeyword(key):
+            return f"{key}={value_code}"
+        return f"**{{{json.dumps(key)}: {value_code}}}"
+
+    @staticmethod
+    def format_arg_value(key: str, value: any) -> str:
+        """Formats an argument value as Python source."""
+        if isinstance(value, dict) and "variable_name" in value:
+            return value["variable_name"]
         if key == "noise_seed" or key == "seed":
-            return f"{key}=random.randint(1, 2**64)"
-        elif isinstance(value, str):
-            value = value.replace("\n", "\\n").replace('"', "'")
-            return f'{key}="{value}"'
-        elif isinstance(value, dict) and "variable_name" in value:
-            return f'{key}={value["variable_name"]}'
-        return f"{key}={value}"
+            return "random.randint(1, 2**64)"
+        if isinstance(value, str):
+            return json.dumps(value)
+        return repr(value)
 
     def assemble_python_code(
         self,
-        import_statements: set,
+        import_statements: Dict[str, set],
         speical_functions_code: List[str],
         code: List[str],
+        workflow_data: Dict,
+        metadata_workflow_data: Dict | None,
         queue_size: int,
         custom_nodes=False,
     ) -> str:
         """Generates the final code string.
 
         Args:
-            import_statements (set): A set of unique import statements.
+            import_statements (Dict[str, set]): Import statements grouped by module.
             speical_functions_code (List[str]): A list of special functions code strings.
             code (List[str]): A list of code strings.
+            workflow_data (Dict): The API workflow data used for runtime prompt execution.
+            metadata_workflow_data (Dict | None): The workflow metadata to embed into saved outputs.
             queue_size (int): Number of photos that will be generated by the script.
             custom_nodes (bool): Whether to include custom nodes in the code.
 
         Returns:
             str: Generated final code as a string.
         """
+        if metadata_workflow_data is None:
+            extra_pnginfo_code = "extra_pnginfo = None"
+        else:
+            extra_pnginfo_code = (
+                "extra_pnginfo = "
+                '{"workflow": json.loads('
+                + json.dumps(json.dumps(metadata_workflow_data))
+                + ")}"
+            )
+
         # Get the source code of the utils functions as a string
         func_strings = []
         for func in [
@@ -392,6 +467,7 @@ class CodeGenerator:
         # Define static import statements required for the script
         static_imports = (
             [
+                "import json",
                 "import os",
                 "import random",
                 "import sys",
@@ -399,7 +475,12 @@ class CodeGenerator:
                 "import torch",
             ]
             + func_strings
-            + ["\n\nadd_comfyui_directory_to_sys_path()\nadd_extra_model_paths()\n"]
+            + [
+                "\n\nadd_comfyui_directory_to_sys_path()\nadd_extra_model_paths()\n",
+                f"workflow = json.loads({json.dumps(json.dumps(workflow_data))})",
+                "prompt = json.loads(json.dumps(workflow))",
+                extra_pnginfo_code,
+            ]
         )
         # Check if custom nodes should be included
         if custom_nodes:
@@ -408,16 +489,19 @@ class CodeGenerator:
         else:
             custom_nodes = ""
         # Create import statements for node classes
-        imports_code = [
-            f"from nodes import {', '.join([class_name for class_name in import_statements])}"
-        ]
+        imports_code = []
+        for module_name in sorted(import_statements.keys()):
+            class_names = ", ".join(sorted(import_statements[module_name]))
+            imports_code.append(f"from {module_name} import {class_names}")
+        special_functions_body = "\n\t\t".join(speical_functions_code) or "pass"
+        loop_body = "\n\t\t".join(code) or "\tpass"
         # Assemble the main function code, including custom nodes if applicable
         main_function_code = (
             "def main():\n\t"
             + f"{custom_nodes}with torch.inference_mode():\n\t\t"
-            + "\n\t\t".join(speical_functions_code)
+            + special_functions_body
             + f"\n\n\t\tfor q in range({queue_size}):\n\t\t"
-            + "\n\t\t".join(code)
+            + loop_body
         )
         # Concatenate all parts to form the final code
         final_code = "\n".join(
@@ -430,20 +514,31 @@ class CodeGenerator:
 
         return final_code
 
-    def get_class_info(self, class_type: str) -> Tuple[str, str, str]:
+    def get_class_info(self, class_type: str) -> Tuple[str, Tuple[str, str], str]:
         """Generates and returns necessary information about class type.
 
         Args:
             class_type (str): Class type.
 
         Returns:
-            Tuple[str, str, str]: Updated class type, import statement string, class initialization code.
+            Tuple[str, Tuple[str, str], str]: Updated class type, import statement and initialization code.
         """
+        class_obj = self.base_node_class_mappings.get(class_type)
+        module_name = "nodes"
+        if class_obj is not None:
+            module_name = class_obj.__module__
         variable_name = self.clean_variable_name(class_type)
-        import_statement = class_type
-        if class_type in self.base_node_class_mappings.keys():
+        is_importable_module = bool(
+            module_name
+            and "/" not in module_name
+            and "\\" not in module_name
+            and all(part.isidentifier() for part in module_name.split("."))
+        )
+        if class_type in self.base_node_class_mappings.keys() and is_importable_module:
+            import_statement = (module_name, class_type)
             class_code = f"{variable_name} = {class_type.strip()}()"
         else:
+            import_statement = ("nodes", "NODE_CLASS_MAPPINGS")
             class_code = f'{variable_name} = NODE_CLASS_MAPPINGS["{class_type}"]()'
 
         return class_type, import_statement, class_code
@@ -526,6 +621,7 @@ class ComfyUItoPython:
     def __init__(
         self,
         workflow: str = "",
+        frontend_workflow: str | Dict | None = None,
         input_file: str = "",
         output_file: str | TextIO = "",
         queue_size: int = 1,
@@ -551,6 +647,7 @@ class ComfyUItoPython:
             raise ValueError("Needs output_file")
 
         self.workflow = workflow
+        self.frontend_workflow = frontend_workflow
         self.input_file = input_file
         self.output_file = output_file
         self.queue_size = queue_size
@@ -576,6 +673,13 @@ class ComfyUItoPython:
         else:
             data = json.loads(self.workflow)
 
+        metadata_workflow_data = None
+        if self.frontend_workflow:
+            if isinstance(self.frontend_workflow, str):
+                metadata_workflow_data = json.loads(self.frontend_workflow)
+            else:
+                metadata_workflow_data = self.frontend_workflow
+
         # Step 2: Initialize extra/custom nodes when requested or when the workflow references
         # a node class that is not currently loaded in the runtime.
         missing_node_types = {
@@ -596,7 +700,10 @@ class ComfyUItoPython:
             self.node_class_mappings, self.base_node_class_mappings
         )
         generated_code = code_generator.generate_workflow(
-            load_order, queue_size=self.queue_size
+            load_order,
+            data,
+            metadata_workflow_data,
+            queue_size=self.queue_size,
         )
 
         # Step 5: Write the generated code to a file

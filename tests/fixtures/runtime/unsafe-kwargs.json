@@ -1,0 +1,11 @@
+{
+  "1": {
+    "class_type": "FlexibleNode",
+    "inputs": {
+      "safe_name": "kept-readable",
+      "class": "reserved-word",
+      "\u2795 Add Lora": "symbol-heavy-key",
+      "spaces and-hyphens": "still-unsafe"
+    }
+  }
+}

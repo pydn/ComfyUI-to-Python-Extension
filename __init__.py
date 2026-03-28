@@ -45,9 +45,14 @@ async def save_as_script(request):
         data = await request.json()
         name = data["name"]
         workflow = data["workflow"]
+        frontend_workflow = data.get("frontend_workflow")
 
         sio = StringIO()
-        ComfyUItoPython(workflow=workflow, output_file=sio)
+        ComfyUItoPython(
+            workflow=workflow,
+            frontend_workflow=frontend_workflow,
+            output_file=sio,
+        )
 
         sio.seek(0)
         data = sio.read()
