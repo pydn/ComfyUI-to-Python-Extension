@@ -91,18 +91,56 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
 
         generated = output.getvalue()
 
-        self.assertIn("from nodes import (", generated)
+        self.assertIn("from nodes import NODE_CLASS_MAPPINGS", generated)
+        self.assertIn("from tests.test_upscale_model_loader_export import (", generated)
         self.assertIn("LoadImage,", generated)
         self.assertIn("UpscaleModelLoader,", generated)
         self.assertIn("ImageUpscaleWithModel,", generated)
-        self.assertIn("NODE_CLASS_MAPPINGS,", generated)
         self.assertIn("loadimage = LoadImage()", generated)
         self.assertIn("upscalemodelloader = UpscaleModelLoader()", generated)
         self.assertIn(
-            "imageupscalewithmodel_3 = imageupscalewithmodel.upscale(",
+            "imageupscalewithmodel__3 = imageupscalewithmodel.upscale(",
             generated,
         )
         self.assertNotIn('NODE_CLASS_MAPPINGS["UpscaleModelLoader"]()', generated)
+
+    def test_frontend_workflow_metadata_is_embedded_for_reimport(self):
+        workflow = {
+            "1": {
+                "class_type": "LoadImage",
+                "inputs": {
+                    "image": "example.png",
+                },
+            }
+        }
+        frontend_workflow = {
+            "version": 0.4,
+            "last_node_id": 1,
+            "last_link_id": 0,
+            "nodes": [],
+            "links": [],
+            "groups": [],
+            "config": {},
+            "extra": {},
+        }
+
+        output = StringIO()
+        ComfyUItoPython(
+            workflow=json.dumps(workflow),
+            frontend_workflow=json.dumps(frontend_workflow),
+            output_file=output,
+            node_class_mappings={
+                "LoadImage": LoadImage,
+            },
+        )
+
+        generated = output.getvalue()
+
+        self.assertIn('extra_pnginfo = {', generated)
+        self.assertIn('"workflow": json.loads(', generated)
+        self.assertIn('"version": 0.4', generated)
+        self.assertIn('"nodes": []', generated)
+        self.assertNotIn('"source": "workflow_api"', generated)
 
 
 if __name__ == "__main__":
