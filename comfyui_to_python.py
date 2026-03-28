@@ -276,17 +276,19 @@ class CodeGenerator:
                 if no_params or key in class_def_params
             }
             # Deal with hidden variables
+            hidden_inputs = input_types.get("hidden", {})
             if (
-                "hidden" in input_types.keys()
-                and "unique_id" in input_types["hidden"].keys()
+                "unique_id" in hidden_inputs
+                and (no_params or "unique_id" in class_def_params)
             ):
                 inputs["unique_id"] = random.randint(1, 2**64)
-            if "hidden" in input_types.keys():
-                if "prompt" in input_types["hidden"].keys():
-                    inputs["prompt"] = {"variable_name": "prompt"}
-                if "extra_pnginfo" in input_types["hidden"].keys():
-                    inputs["extra_pnginfo"] = {"variable_name": "extra_pnginfo"}
-            elif class_def_params is not None:
+            if "prompt" in hidden_inputs and (no_params or "prompt" in class_def_params):
+                inputs["prompt"] = {"variable_name": "prompt"}
+            if "extra_pnginfo" in hidden_inputs and (
+                no_params or "extra_pnginfo" in class_def_params
+            ):
+                inputs["extra_pnginfo"] = {"variable_name": "extra_pnginfo"}
+            if "hidden" not in input_types and class_def_params is not None:
                 if "unique_id" in class_def_params:
                     inputs["unique_id"] = random.randint(1, 2**64)
 
@@ -296,8 +298,13 @@ class CodeGenerator:
                 f"{self.sanitize_node_id(str(idx))}"
             )
             inputs = self.update_inputs(inputs, executed_variables)
+            seed_sync_code = self.create_prompt_seed_sync_code(
+                idx, inputs, is_special_function
+            )
 
             if is_special_function:
+                if seed_sync_code:
+                    special_functions_code.extend(seed_sync_code)
                 special_functions_code.append(
                     self.create_function_call_code(
                         initialized_objects[class_type],
@@ -308,6 +315,8 @@ class CodeGenerator:
                     )
                 )
             else:
+                if seed_sync_code:
+                    code.extend(seed_sync_code)
                 code.append(
                     self.create_function_call_code(
                         initialized_objects[class_type],
@@ -363,6 +372,28 @@ class CodeGenerator:
 
         return code
 
+    def create_prompt_seed_sync_code(
+        self, node_id: str, inputs: Dict, is_special_function: bool
+    ) -> List[str]:
+        """Generate code that keeps prompt metadata aligned with randomized seeds."""
+        seed_sync_lines = []
+        for key in ("seed", "noise_seed"):
+            if key not in inputs:
+                continue
+            randomized_seed_variable = (
+                f"node_{self.sanitize_node_id(str(node_id))}_{self.clean_variable_name(key)}"
+            )
+            seed_sync_lines.append(
+                f'{randomized_seed_variable} = prompt["{node_id}"]["inputs"]["{key}"] = random.randint(1, 2**64)'
+            )
+            inputs[key] = {"variable_name": randomized_seed_variable}
+
+        if not seed_sync_lines:
+            return []
+
+        indentation = "" if is_special_function else "\t"
+        return [f"{indentation}{line}\n" for line in seed_sync_lines]
+
     def format_arg(self, key: str, value: any) -> str:
         """Formats arguments based on key and value.
 
@@ -381,12 +412,12 @@ class CodeGenerator:
     @staticmethod
     def format_arg_value(key: str, value: any) -> str:
         """Formats an argument value as Python source."""
+        if isinstance(value, dict) and "variable_name" in value:
+            return value["variable_name"]
         if key == "noise_seed" or key == "seed":
             return "random.randint(1, 2**64)"
         if isinstance(value, str):
             return json.dumps(value)
-        if isinstance(value, dict) and "variable_name" in value:
-            return value["variable_name"]
         return repr(value)
 
     def assemble_python_code(

@@ -74,6 +74,46 @@ class MergeImages:
         return (left, right)
 
 
+class HiddenMetadataFilteredNode:
+    CATEGORY = "image"
+    FUNCTION = "save"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+            },
+            "hidden": {
+                "prompt": "PROMPT",
+                "extra_pnginfo": "EXTRA_PNGINFO",
+            },
+        }
+
+    def save(self, image):
+        return (image,)
+
+
+class HiddenPromptSeedNode:
+    CATEGORY = "sampling"
+    FUNCTION = "sample"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "seed": ("INT",),
+                "noise_seed": ("INT",),
+            },
+            "hidden": {
+                "prompt": "PROMPT",
+            },
+        }
+
+    def sample(self, seed, noise_seed, prompt):
+        return (seed, noise_seed, prompt)
+
+
 class UpscaleModelLoaderExportTest(unittest.TestCase):
     def test_upscale_workflow_uses_direct_upscale_model_loader_init(self):
         workflow = {
@@ -258,6 +298,66 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
 
         self.assertIn("extra_pnginfo = None", generated)
         self.assertNotIn('"workflow": json.loads(', generated)
+
+    def test_hidden_metadata_kwargs_follow_function_signature(self):
+        workflow = {
+            "1": {
+                "class_type": "HiddenMetadataFilteredNode",
+                "inputs": {
+                    "image": "example.png",
+                },
+            }
+        }
+
+        output = StringIO()
+        ComfyUItoPython(
+            workflow=json.dumps(workflow),
+            output_file=output,
+            node_class_mappings={
+                "HiddenMetadataFilteredNode": HiddenMetadataFilteredNode,
+            },
+        )
+
+        generated = output.getvalue()
+
+        self.assertIn("hiddenmetadatafilterednode_1 =", generated)
+        self.assertNotIn("prompt=prompt", generated)
+        self.assertNotIn("extra_pnginfo=extra_pnginfo", generated)
+
+    def test_randomized_seed_inputs_update_prompt_metadata_before_execution(self):
+        workflow = {
+            "1": {
+                "class_type": "HiddenPromptSeedNode",
+                "inputs": {
+                    "seed": 1,
+                    "noise_seed": 2,
+                },
+            }
+        }
+
+        output = StringIO()
+        ComfyUItoPython(
+            workflow=json.dumps(workflow),
+            output_file=output,
+            node_class_mappings={
+                "HiddenPromptSeedNode": HiddenPromptSeedNode,
+            },
+        )
+
+        generated = output.getvalue()
+
+        self.assertIn(
+            'node_1_seed = prompt["1"]["inputs"]["seed"] = random.randint(1, 2**64)',
+            generated,
+        )
+        self.assertIn(
+            'node_1_noise_seed = prompt["1"]["inputs"]["noise_seed"] = random.randint(',
+            generated,
+        )
+        self.assertIn("1, 2**64", generated)
+        self.assertIn("seed=node_1_seed", generated)
+        self.assertIn("noise_seed=node_1_noise_seed", generated)
+        self.assertIn("prompt=prompt", generated)
 
 
 if __name__ == "__main__":
