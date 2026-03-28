@@ -12,9 +12,15 @@ This project supports:
 
 ## Install
 
+Choose the setup that matches how you want to use the project.
+
+### Web UI extension (`File -> Save As Script`)
+
+For ComfyUI to recognize this project as an extension, the repo must be discoverable through ComfyUI's `custom_nodes` search paths.
+
 Use one of these setups:
 
-1. Install inside `ComfyUI/custom_nodes`
+1. Clone directly into `ComfyUI/custom_nodes`
 ```bash
 cd /path/to/ComfyUI/custom_nodes
 git clone https://github.com/pydn/ComfyUI-to-Python-Extension.git
@@ -22,7 +28,25 @@ cd ComfyUI-to-Python-Extension
 uv sync
 ```
 
-2. Keep the repo anywhere and point it at ComfyUI
+2. Keep the repo elsewhere, then either:
+- symlink it into `ComfyUI/custom_nodes`
+- add its parent directory to ComfyUI's `custom_nodes` search paths via `extra_model_paths.yaml`
+
+Example symlink setup:
+```bash
+git clone https://github.com/pydn/ComfyUI-to-Python-Extension.git
+cd /path/to/ComfyUI/custom_nodes
+ln -s /path/to/ComfyUI-to-Python-Extension ComfyUI-to-Python-Extension
+cd /path/to/ComfyUI-to-Python-Extension
+uv sync
+```
+
+After installation, restart ComfyUI.
+
+### CLI exporter / generated scripts
+
+You can keep the repo anywhere for CLI usage and generated-script execution.
+
 ```bash
 git clone https://github.com/pydn/ComfyUI-to-Python-Extension.git
 cd ComfyUI-to-Python-Extension
@@ -30,11 +54,11 @@ uv sync
 export COMFYUI_PATH=/path/to/ComfyUI
 ```
 
+`COMFYUI_PATH` helps the exporter and generated scripts find the ComfyUI codebase. It does not, by itself, register this repo as a ComfyUI extension for the Web UI.
+
 `COMFYUI_PATH` is checked first. If it is not set, the exporter falls back to searching parent directories for a folder named `ComfyUI`.
 
 ## Web UI Export
-
-After installation, restart ComfyUI.
 
 In current ComfyUI builds, `Save As Script` is typically available under:
 
@@ -90,6 +114,8 @@ The generated script is a workflow export. It does not automatically turn workfl
 
 - `Save As Script` not visible:
   check your current ComfyUI menu/frontend version and look under `File`
+- `Save As Script` not visible after restart:
+  make sure this repo is discoverable by ComfyUI through `custom_nodes` by cloning it into `ComfyUI/custom_nodes`, symlinking it there, or adding an external `custom_nodes` path in `extra_model_paths.yaml`
 - Desktop says `prompt()` is unsupported:
   use the CLI export flow instead
 - ComfyUI cannot be found:
