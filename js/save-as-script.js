@@ -29,10 +29,11 @@ const extension = {
 		}
 		
 		app.graphToPrompt().then(async (p) => {
+			const frontendWorkflow = p.workflow ?? app.graph.serialize();
 			const json = JSON.stringify({
 				name: filename + ".json",
 				workflow: JSON.stringify(p.output, null, 2),
-				frontend_workflow: JSON.stringify(app.graph.serialize(), null, 2),
+				frontend_workflow: JSON.stringify(frontendWorkflow, null, 2),
 			}, null, 2); // convert the data to a JSON string
 			var response = await api.fetchApi(`/saveasscript`, { method: "POST", body: json });
 			if(response.status == 200) {
