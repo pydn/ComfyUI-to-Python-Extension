@@ -1,8 +1,11 @@
 import json
+import tempfile
 import unittest
 from io import StringIO
+from pathlib import Path
+from unittest.mock import patch
 
-from comfyui_to_python import ComfyUItoPython
+from comfyui_to_python import ComfyUItoPython, run
 
 
 class UpscaleModelLoader:
@@ -141,6 +144,65 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
         self.assertIn('"version": 0.4', generated)
         self.assertIn('"nodes": []', generated)
         self.assertNotIn('"source": "workflow_api"', generated)
+
+    def test_run_accepts_frontend_workflow_file_for_cli_metadata(self):
+        workflow = {
+            "1": {
+                "class_type": "LoadImage",
+                "inputs": {
+                    "image": "example.png",
+                },
+            }
+        }
+        frontend_workflow = {
+            "version": 0.4,
+            "last_node_id": 1,
+            "last_link_id": 0,
+            "nodes": [
+                {
+                    "id": 1,
+                    "type": "LoadImage",
+                    "pos": [0, 0],
+                    "size": [210, 60],
+                    "flags": {},
+                    "order": 0,
+                    "mode": 0,
+                    "inputs": [],
+                    "outputs": [],
+                    "properties": {},
+                    "widgets_values": ["example.png"],
+                }
+            ],
+            "links": [],
+            "groups": [],
+            "config": {},
+            "extra": {},
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmpdir_path = Path(tmpdir)
+            input_file = tmpdir_path / "workflow_api.json"
+            frontend_file = tmpdir_path / "workflow.json"
+            output_file = tmpdir_path / "workflow_api.py"
+
+            input_file.write_text(json.dumps(workflow), encoding="utf-8")
+            frontend_file.write_text(json.dumps(frontend_workflow), encoding="utf-8")
+
+            with patch(
+                "comfyui_to_python.get_node_class_mappings",
+                return_value={"LoadImage": LoadImage},
+            ), patch("comfyui_to_python.import_custom_nodes"):
+                run(
+                    input_file=str(input_file),
+                    frontend_workflow_file=str(frontend_file),
+                    output_file=str(output_file),
+                    queue_size=1,
+                )
+
+            generated = output_file.read_text(encoding="utf-8")
+
+        self.assertIn('"version": 0.4', generated)
+        self.assertIn('"type": "LoadImage"', generated)
 
 
 if __name__ == "__main__":

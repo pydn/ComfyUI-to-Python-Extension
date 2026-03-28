@@ -87,12 +87,14 @@ Options:
 ```bash
 uv run python comfyui_to_python.py \
   --input_file workflow_api.json \
+  --frontend_workflow_file workflow.json \
   --output_file workflow_api.py \
   --queue_size 10
 ```
 
 Flags:
 - `--input_file`: input workflow JSON, default `workflow_api.json`
+- `--frontend_workflow_file`: optional full frontend workflow JSON for reimportable PNG metadata
 - `--output_file`: output Python file, default `workflow_api.py`
 - `--queue_size`: default execution count in the generated script, default `10`
 
@@ -109,6 +111,10 @@ export COMFYUI_PATH=/path/to/ComfyUI
 ```
 
 The generated script is a workflow export. It does not automatically turn workflow inputs into command-line arguments.
+
+If you want generated images to drag-drop back into ComfyUI from the CLI flow, provide both:
+- the API workflow JSON via `--input_file`
+- the full frontend workflow JSON via `--frontend_workflow_file`
 
 ## Troubleshooting
 

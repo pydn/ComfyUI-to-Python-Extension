@@ -671,6 +671,7 @@ def run(
     input_file: str = DEFAULT_INPUT_FILE,
     output_file: str = DEFAULT_OUTPUT_FILE,
     queue_size: int = DEFAULT_QUEUE_SIZE,
+    frontend_workflow_file: str = "",
 ) -> None:
     """Generate Python code from a ComfyUI workflow_api.json file.
 
@@ -680,12 +681,19 @@ def run(
             Defaults to "workflow_api.py".
         queue_size (int): The number of times a workflow will be executed by the script.
             Defaults to 1.
+        frontend_workflow_file (str): Optional path to a full frontend workflow JSON file.
+            When provided, generated images can preserve reimportable ComfyUI workflow metadata.
 
     Returns:
         None
     """
     ComfyUItoPython(
         input_file=input_file,
+        frontend_workflow=(
+            FileHandler.read_json_file(frontend_workflow_file)
+            if frontend_workflow_file
+            else None
+        ),
         output_file=output_file,
         queue_size=queue_size,
         needs_init_custom_nodes=True,
@@ -717,6 +725,12 @@ def main() -> None:
         type=int,
         help="number of times the workflow will be executed by default",
         default=DEFAULT_QUEUE_SIZE,
+    )
+    parser.add_argument(
+        "--frontend_workflow_file",
+        type=str,
+        help="optional path to a full frontend workflow JSON file for reimportable PNG metadata",
+        default="",
     )
     pargs = parser.parse_args()
     run(**vars(pargs))
