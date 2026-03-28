@@ -550,18 +550,22 @@ class ComfyUItoPython:
         Returns:
             None
         """
-        # Step 1: Import all custom nodes if we need to
-        if self.needs_init_custom_nodes:
-            import_custom_nodes()
-        else:
-            # If they're already imported, we don't know which nodes are custom nodes, so we need to import all of them
-            self.base_node_class_mappings = {}
-
-        # Step 2: Read JSON data from the input file
+        # Step 1: Read JSON data from the input file
         if self.input_file:
             data = FileHandler.read_json_file(self.input_file)
         else:
             data = json.loads(self.workflow)
+
+        # Step 2: Initialize extra/custom nodes when requested or when the workflow references
+        # a node class that is not currently loaded in the runtime.
+        missing_node_types = {
+            node_data["class_type"]
+            for node_data in data.values()
+            if node_data["class_type"] not in self.node_class_mappings
+        }
+        if self.needs_init_custom_nodes or missing_node_types:
+            import_custom_nodes()
+            self.base_node_class_mappings = copy.deepcopy(self.node_class_mappings)
 
         # Step 3: Determine the load order
         load_order_determiner = LoadOrderDeterminer(data, self.node_class_mappings)
