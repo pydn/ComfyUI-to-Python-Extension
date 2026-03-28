@@ -96,7 +96,7 @@ Flags:
 - `--output_file`: output Python file, default `workflow_api.py`
 - `--queue_size`: default execution count in the generated script, default `10`
 
-![Dev Mode Options](images/dev_mode_options.png)
+![Dev Mode Options](images/dev_mode_options.PNG)
 
 ## Generated Scripts
 
