@@ -57,6 +57,23 @@ class ImageUpscaleWithModel:
         return (image,)
 
 
+class MergeImages:
+    CATEGORY = "image"
+    FUNCTION = "merge"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "left": ("IMAGE",),
+                "right": ("IMAGE",),
+            }
+        }
+
+    def merge(self, left, right):
+        return (left, right)
+
+
 class UpscaleModelLoaderExportTest(unittest.TestCase):
     def test_upscale_workflow_uses_direct_upscale_model_loader_init(self):
         workflow = {
@@ -102,7 +119,7 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
         self.assertIn("loadimage = LoadImage()", generated)
         self.assertIn("upscalemodelloader = UpscaleModelLoader()", generated)
         self.assertIn(
-            "imageupscalewithmodel__3 = imageupscalewithmodel.upscale(",
+            "imageupscalewithmodel_3 = imageupscalewithmodel.upscale(",
             generated,
         )
         self.assertNotIn('NODE_CLASS_MAPPINGS["UpscaleModelLoader"]()', generated)
@@ -168,6 +185,47 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
 
         self.assertIn("extra_pnginfo = None", generated)
         self.assertNotIn('"workflow": json.loads(', generated)
+
+    def test_export_preserves_unique_variable_names_for_subgraph_node_ids(self):
+        workflow = {
+            "1:23": {
+                "class_type": "LoadImage",
+                "inputs": {
+                    "image": "left.png",
+                },
+            },
+            "12:3": {
+                "class_type": "LoadImage",
+                "inputs": {
+                    "image": "right.png",
+                },
+            },
+            "20": {
+                "class_type": "MergeImages",
+                "inputs": {
+                    "left": ["1:23", 0],
+                    "right": ["12:3", 0],
+                },
+            },
+        }
+
+        output = StringIO()
+        ComfyUItoPython(
+            workflow=json.dumps(workflow),
+            output_file=output,
+            node_class_mappings={
+                "LoadImage": LoadImage,
+                "MergeImages": MergeImages,
+            },
+        )
+
+        generated = output.getvalue()
+
+        self.assertIn("loadimage_1_23 = loadimage.load_image(", generated)
+        self.assertIn("loadimage_12_3 = loadimage.load_image(", generated)
+        self.assertIn("mergeimages_20 = mergeimages.merge(", generated)
+        self.assertIn("left=get_value_at_index(loadimage_1_23, 0)", generated)
+        self.assertIn("right=get_value_at_index(loadimage_12_3, 0)", generated)
 
     def test_run_accepts_frontend_workflow_file_for_cli_metadata(self):
         workflow = {
