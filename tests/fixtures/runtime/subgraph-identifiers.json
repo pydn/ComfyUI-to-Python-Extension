@@ -1,0 +1,19 @@
+{
+  "173:132": {
+    "class_type": "RegexReplace",
+    "inputs": {
+      "text": "abc123",
+      "pattern": "\\d+",
+      "replace": "X"
+    }
+  },
+  "174:133": {
+    "class_type": "PassthroughText",
+    "inputs": {
+      "text": [
+        "173:132",
+        0
+      ]
+    }
+  }
+}
