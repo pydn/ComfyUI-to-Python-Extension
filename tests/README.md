@@ -17,6 +17,16 @@ uv sync
 
 - Runtime validation also needs a working ComfyUI checkout.
   Set `COMFYUI_PATH` to that checkout, or run the tests from a location where a parent directory contains `ComfyUI`.
+- Runtime-tier tests do not download missing models automatically.
+  If a required model is missing, the fixture fails with `model provisioning failure`.
+  Use `--print-download-plan` to print the manual download commands.
+
+### Runtime Model Requirements
+
+The current runtime-capable fixtures require these model files in the target ComfyUI checkout:
+
+- `text-to-image`: `models/checkpoints/v1-5-pruned-emaonly-fp16.safetensors`
+- `upscale-model-loader`: `models/upscale_models/RealESRGAN_x4plus.safetensors`
 
 ## Unit Tests
 
@@ -95,7 +105,7 @@ Notes:
 - `Could not find a valid ComfyUI checkout for runtime validation.`:
   set `COMFYUI_PATH` to your ComfyUI checkout, or run the tests from a directory layout where a parent folder contains `ComfyUI`.
 - `Missing models for ...`:
-  rerun with `--print-download-plan` to print the expected `curl` commands and target model directories.
+  runtime-tier tests do not fetch models for you. Rerun with `--print-download-plan` to print the expected `curl` commands and target model directories, then install the files manually.
 - `No selected fixtures are runtime-capable for this tier.`:
   choose a runtime-capable fixture such as `text-to-image` or `upscale-model-loader`.
 - Generated script execution fails because files or models are missing:
