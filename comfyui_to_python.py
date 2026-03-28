@@ -2,6 +2,7 @@ import copy
 import glob
 import inspect
 import json
+import keyword
 import os
 import random
 import sys
@@ -280,7 +281,10 @@ class CodeGenerator:
                     inputs["unique_id"] = random.randint(1, 2**64)
 
             # Create executed variable and generate code
-            executed_variables[idx] = f"{self.clean_variable_name(class_type)}_{idx}"
+            executed_variables[idx] = (
+                f"{self.clean_variable_name(class_type)}_"
+                f"{self.clean_variable_name(str(idx))}"
+            )
             inputs = self.update_inputs(inputs, executed_variables)
 
             if is_special_function:
@@ -358,14 +362,21 @@ class CodeGenerator:
         Returns:
             str: Formatted argument as a string.
         """
+        value_code = self.format_arg_value(key, value)
+        if key.isidentifier() and not keyword.iskeyword(key):
+            return f"{key}={value_code}"
+        return f"**{{{json.dumps(key)}: {value_code}}}"
+
+    @staticmethod
+    def format_arg_value(key: str, value: any) -> str:
+        """Formats an argument value as Python source."""
         if key == "noise_seed" or key == "seed":
-            return f"{key}=random.randint(1, 2**64)"
-        elif isinstance(value, str):
-            value = value.replace("\n", "\\n").replace('"', "'")
-            return f'{key}="{value}"'
-        elif isinstance(value, dict) and "variable_name" in value:
-            return f'{key}={value["variable_name"]}'
-        return f"{key}={value}"
+            return "random.randint(1, 2**64)"
+        if isinstance(value, str):
+            return json.dumps(value)
+        if isinstance(value, dict) and "variable_name" in value:
+            return value["variable_name"]
+        return repr(value)
 
     def assemble_python_code(
         self,
@@ -433,13 +444,15 @@ class CodeGenerator:
         for module_name in sorted(import_statements.keys()):
             class_names = ", ".join(sorted(import_statements[module_name]))
             imports_code.append(f"from {module_name} import {class_names}")
+        special_functions_body = "\n\t\t".join(speical_functions_code) or "pass"
+        loop_body = "\n\t\t".join(code) or "\tpass"
         # Assemble the main function code, including custom nodes if applicable
         main_function_code = (
             "def main():\n\t"
             + f"{custom_nodes}with torch.inference_mode():\n\t\t"
-            + "\n\t\t".join(speical_functions_code)
+            + special_functions_body
             + f"\n\n\t\tfor q in range({queue_size}):\n\t\t"
-            + "\n\t\t".join(code)
+            + loop_body
         )
         # Concatenate all parts to form the final code
         final_code = "\n".join(
