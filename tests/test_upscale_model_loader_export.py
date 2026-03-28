@@ -95,7 +95,7 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
         generated = output.getvalue()
 
         self.assertIn("from nodes import NODE_CLASS_MAPPINGS", generated)
-        self.assertIn("from tests.test_upscale_model_loader_export import (", generated)
+        self.assertIn(f"from {LoadImage.__module__} import (", generated)
         self.assertIn("LoadImage,", generated)
         self.assertIn("UpscaleModelLoader,", generated)
         self.assertIn("ImageUpscaleWithModel,", generated)
@@ -144,6 +144,30 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
         self.assertIn('"version": 0.4', generated)
         self.assertIn('"nodes": []', generated)
         self.assertNotIn('"source": "workflow_api"', generated)
+
+    def test_export_without_frontend_workflow_leaves_png_workflow_metadata_absent(self):
+        workflow = {
+            "1": {
+                "class_type": "LoadImage",
+                "inputs": {
+                    "image": "example.png",
+                },
+            }
+        }
+
+        output = StringIO()
+        ComfyUItoPython(
+            workflow=json.dumps(workflow),
+            output_file=output,
+            node_class_mappings={
+                "LoadImage": LoadImage,
+            },
+        )
+
+        generated = output.getvalue()
+
+        self.assertIn("extra_pnginfo = None", generated)
+        self.assertNotIn('"workflow": json.loads(', generated)
 
     def test_run_accepts_frontend_workflow_file_for_cli_metadata(self):
         workflow = {

@@ -13,8 +13,6 @@ from io import StringIO
 from pathlib import Path
 from typing import Callable
 
-from comfyui_to_python_utils import get_comfyui_path
-
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "runtime"
 GENERATED_DIR = ROOT / "tests" / "runtime" / "generated"
@@ -23,6 +21,8 @@ COMFYUI_INPUT_DIRNAME = "input"
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from comfyui_to_python_utils import get_comfyui_path
 
 
 class ValidationFailure(RuntimeError):
