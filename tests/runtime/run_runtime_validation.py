@@ -13,11 +13,11 @@ from io import StringIO
 from pathlib import Path
 from typing import Callable
 
+from comfyui_to_python_utils import get_comfyui_path
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "runtime"
 GENERATED_DIR = ROOT / "tests" / "runtime" / "generated"
-BASELINE_COMFYUI_PATH = Path("/home/peyton/code/ComfyUI")
 COMFYUI_OUTPUT_DIRNAME = "output"
 COMFYUI_INPUT_DIRNAME = "input"
 
@@ -286,14 +286,16 @@ def load_fixture_names(selection: str) -> list[str]:
 
 def ensure_runtime_path(tier: str) -> str:
     if tier == "runtime":
-        runtime_path = BASELINE_COMFYUI_PATH
+        runtime_path = get_comfyui_path()
     else:
         return os.environ.get("COMFYUI_PATH", "")
 
-    if not runtime_path.is_dir():
+    if not runtime_path or not Path(runtime_path).is_dir():
         raise ValidationFailure(
             "environment/setup failure",
-            f"Expected ComfyUI checkout at {runtime_path}, but it was not found.",
+            "Could not find a valid ComfyUI checkout for runtime validation. "
+            "Set COMFYUI_PATH or run the tests from a location where a "
+            "parent directory contains ComfyUI.",
         )
 
     return str(runtime_path)
