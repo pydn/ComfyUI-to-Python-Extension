@@ -176,6 +176,9 @@ class SaveImageNode:
 
 
 FIXTURES = {
+    # Runtime-capable fixtures are exported inside a real ComfyUI checkout and
+    # then executed end-to-end. Fast fixtures use local stub mappings so the
+    # exporter can be validated without importing the full runtime.
     "upscale-model-loader": FixtureConfig(
         name="upscale-model-loader",
         path=FIXTURE_DIR / "upscale-model-loader.json",
@@ -393,6 +396,8 @@ def export_workflow_in_runtime_env(fixture: FixtureConfig, runtime_path: str) ->
     env["PYTHONPATH"] = os.pathsep.join([str(ROOT), env.get("PYTHONPATH", "")]).rstrip(
         os.pathsep
     )
+    # Re-enter this script under the runtime interpreter so export happens with
+    # the target ComfyUI checkout on sys.path, not just the repo's current venv.
     result = subprocess.run(
         [
             runtime_python,
@@ -487,6 +492,8 @@ def validate_output_artifact(
     fixture: FixtureConfig,
     output_path: Path,
 ) -> None:
+    # Read PNG metadata directly so artifact validation does not depend on
+    # optional imaging libraries inside the runtime environment.
     width, height, metadata = parse_png_info(output_path)
 
     if fixture.expected_min_dimensions is not None:
@@ -523,6 +530,8 @@ def execute_generated_python(
         tmp_path = Path(tmpdir) / f"{fixture.name}.py"
         tmp_path.write_text(generated_code, encoding="utf-8")
         output_dir = Path(runtime_path) / COMFYUI_OUTPUT_DIRNAME
+        # Compare against the pre-run snapshot so validation can prove this
+        # execution created a fresh artifact instead of reusing an old output.
         existing_outputs = set(output_dir.glob("*.png"))
         env = os.environ.copy()
         env["COMFYUI_PATH"] = runtime_path
@@ -591,6 +600,8 @@ def run_fixture(fixture: FixtureConfig, tier: str, execute: bool, runtime_path: 
         generated_code = export_workflow_in_runtime_env(fixture, runtime_path)
     validate_generated_python(generated_code, fixture.name)
 
+    # Fast keeps execution opt-in because its stub node mappings are intended for
+    # export coverage only. Runtime always executes the generated script.
     should_execute = execute or tier == "runtime"
     if should_execute and tier == "runtime":
         execute_generated_python(generated_code, fixture, runtime_path)
@@ -641,7 +652,16 @@ def main() -> int:
         for fixture in requested:
             try:
                 if args.print_download_plan and args.tier == "runtime":
-                    print_download_plan(fixture, runtime_path)
+                    missing_models = check_models(fixture, runtime_path)
+                    for requirement in missing_models:
+                        target_dir = Path(runtime_path) / requirement.relative_dir
+                        print(
+                            "download:",
+                            f"mkdir -p {target_dir} && curl -L {requirement.source_url} -o {target_dir / requirement.filename}",
+                        )
+                    if missing_models:
+                        print(f"{fixture.name}: download-plan")
+                        continue
                 status = run_fixture(fixture, args.tier, args.execute, runtime_path)
                 print(f"{fixture.name}: {status}")
             except ValidationFailure as exc:
