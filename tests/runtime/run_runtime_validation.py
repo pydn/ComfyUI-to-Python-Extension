@@ -18,7 +18,6 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = ROOT / "tests" / "fixtures" / "runtime"
 GENERATED_DIR = ROOT / "tests" / "runtime" / "generated"
 BASELINE_COMFYUI_PATH = Path("/home/peyton/code/ComfyUI")
-UPSTREAM_SMOKE_COMFYUI_PATH = Path("/home/peyton/code/ComfyUI-upstream-smoke")
 COMFYUI_OUTPUT_DIRNAME = "output"
 COMFYUI_INPUT_DIRNAME = "input"
 
@@ -237,11 +236,11 @@ FIXTURES = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run fast, runtime, or upstream-smoke validation for committed fixtures."
+        description="Run fast or runtime validation for committed fixtures."
     )
     parser.add_argument(
         "--tier",
-        choices=("fast", "runtime", "upstream-smoke"),
+        choices=("fast", "runtime"),
         help="Validation tier to run.",
     )
     parser.add_argument(
@@ -277,8 +276,6 @@ def parse_args() -> argparse.Namespace:
 def load_fixture_names(selection: str) -> list[str]:
     if selection == "all":
         return list(FIXTURES.keys())
-    if selection == "smoke":
-        return ["upscale-model-loader", "text-to-image"]
     if selection not in FIXTURES:
         raise ValidationFailure("fixture bug", f"Unknown fixture '{selection}'.")
     return [selection]
@@ -287,8 +284,6 @@ def load_fixture_names(selection: str) -> list[str]:
 def ensure_runtime_path(tier: str) -> str:
     if tier == "runtime":
         runtime_path = BASELINE_COMFYUI_PATH
-    elif tier == "upstream-smoke":
-        runtime_path = UPSTREAM_SMOKE_COMFYUI_PATH
     else:
         return os.environ.get("COMFYUI_PATH", "")
 
@@ -596,8 +591,8 @@ def run_fixture(fixture: FixtureConfig, tier: str, execute: bool, runtime_path: 
         generated_code = export_workflow_in_runtime_env(fixture, runtime_path)
     validate_generated_python(generated_code, fixture.name)
 
-    should_execute = execute or tier in {"runtime", "upstream-smoke"}
-    if should_execute and tier in {"runtime", "upstream-smoke"}:
+    should_execute = execute or tier == "runtime"
+    if should_execute and tier == "runtime":
         execute_generated_python(generated_code, fixture, runtime_path)
 
     return "pass"
@@ -634,7 +629,7 @@ def main() -> int:
                     "fixture bug",
                     "No selected fixtures are fast-tier compatible.",
                 )
-        elif args.tier in {"runtime", "upstream-smoke"}:
+        elif args.tier == "runtime":
             requested = [fixture for fixture in requested if fixture.runtime_capable]
             if not requested:
                 raise ValidationFailure(
@@ -645,7 +640,7 @@ def main() -> int:
         failures: list[tuple[str, str, str]] = []
         for fixture in requested:
             try:
-                if args.print_download_plan and args.tier in {"runtime", "upstream-smoke"}:
+                if args.print_download_plan and args.tier == "runtime":
                     print_download_plan(fixture, runtime_path)
                 status = run_fixture(fixture, args.tier, args.execute, runtime_path)
                 print(f"{fixture.name}: {status}")
