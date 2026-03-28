@@ -1,6 +1,10 @@
 # ComfyUI-to-Python-Extension
 
-Generate Python from ComfyUI workflows.
+![banner](images/comfyui_to_python_banner.png)
+
+Build a workflow in ComfyUI, then walk away with runnable Python.
+
+`ComfyUI-to-Python-Extension` turns visual workflows into executable scripts so you can move from node graphs to automation, experiments, and repeatable generation without rebuilding everything by hand.
 
 This project supports:
 - exporting from the ComfyUI UI with `Save As Script`
@@ -38,6 +42,8 @@ In current ComfyUI builds, `Save As Script` is typically available under:
 
 The command downloads a generated `.py` file.
 
+![Save As Script](images/save_as_script.png)
+
 Notes:
 - menu placement can differ between frontend versions
 - ComfyUI Desktop may fail on the current filename prompt flow; use the CLI flow below if that happens
@@ -45,7 +51,7 @@ Notes:
 ## CLI Export
 
 1. In ComfyUI, enable dev mode options if needed.
-2. Save the workflow in API format.
+2. Save the workflow in API format: `File -> Export (API)`.
 3. Run the exporter:
 
 ```bash
@@ -65,6 +71,8 @@ Flags:
 - `--input_file`: input workflow JSON, default `workflow_api.json`
 - `--output_file`: output Python file, default `workflow_api.py`
 - `--queue_size`: default execution count in the generated script, default `10`
+
+![Dev Mode Options](images/dev_mode_options.png)
 
 ## Generated Scripts
 
