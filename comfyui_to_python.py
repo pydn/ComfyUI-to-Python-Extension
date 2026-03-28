@@ -16,18 +16,28 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from comfyui_to_python_utils import (
     import_custom_nodes,
     find_path,
+    get_comfyui_path,
     add_comfyui_directory_to_sys_path,
     add_extra_model_paths,
     get_value_at_index,
 )
 
-add_comfyui_directory_to_sys_path()
-from nodes import NODE_CLASS_MAPPINGS
-
 
 DEFAULT_INPUT_FILE = "workflow_api.json"
 DEFAULT_OUTPUT_FILE = "workflow_api.py"
 DEFAULT_QUEUE_SIZE = 10
+
+
+def get_node_class_mappings() -> Dict:
+    """Load ComfyUI node mappings on demand.
+
+    Tests that inject explicit node mappings should not need a full ComfyUI runtime
+    just to import this module.
+    """
+    add_comfyui_directory_to_sys_path()
+    from nodes import NODE_CLASS_MAPPINGS
+
+    return NODE_CLASS_MAPPINGS
 
 
 class FileHandler:
@@ -289,7 +299,11 @@ class CodeGenerator:
 
         # Generate final code by combining imports and code, and wrap them in a main function
         final_code = self.assemble_python_code(
-            import_statements, special_functions_code, code, queue_size, custom_nodes
+            import_statements,
+            special_functions_code,
+            code,
+            queue_size,
+            custom_nodes,
         )
 
         return final_code
@@ -369,6 +383,7 @@ class CodeGenerator:
         func_strings = []
         for func in [
             get_value_at_index,
+            get_comfyui_path,
             find_path,
             add_comfyui_directory_to_sys_path,
             add_extra_model_paths,
@@ -424,8 +439,8 @@ class CodeGenerator:
         Returns:
             Tuple[str, str, str]: Updated class type, import statement string, class initialization code.
         """
-        import_statement = class_type
         variable_name = self.clean_variable_name(class_type)
+        import_statement = class_type
         if class_type in self.base_node_class_mappings.keys():
             class_code = f"{variable_name} = {class_type.strip()}()"
         else:
@@ -514,7 +529,7 @@ class ComfyUItoPython:
         input_file: str = "",
         output_file: str | TextIO = "",
         queue_size: int = 1,
-        node_class_mappings: Dict = NODE_CLASS_MAPPINGS,
+        node_class_mappings: Dict | None = None,
         needs_init_custom_nodes: bool = False,
     ):
         """Initialize the ComfyUItoPython class with the given parameters. Exactly one of workflow or input_file must be specified.
@@ -523,7 +538,8 @@ class ComfyUItoPython:
             input_file (str): Path to the input JSON file.
             output_file (str | TextIO): Path to the output file or a file-like object.
             queue_size (int): The number of times a workflow will be executed by the script. Defaults to 1.
-            node_class_mappings (Dict): Mappings of node classes. Defaults to NODE_CLASS_MAPPINGS.
+            node_class_mappings (Dict | None): Mappings of node classes. Defaults to the current
+                ComfyUI NODE_CLASS_MAPPINGS when not provided.
             needs_init_custom_nodes (bool): Whether to initialize custom nodes. Defaults to False.
         """
         if input_file and workflow:
@@ -538,7 +554,11 @@ class ComfyUItoPython:
         self.input_file = input_file
         self.output_file = output_file
         self.queue_size = queue_size
-        self.node_class_mappings = node_class_mappings
+        self.node_class_mappings = (
+            node_class_mappings
+            if node_class_mappings is not None
+            else get_node_class_mappings()
+        )
         self.needs_init_custom_nodes = needs_init_custom_nodes
 
         self.base_node_class_mappings = copy.deepcopy(self.node_class_mappings)
@@ -550,18 +570,22 @@ class ComfyUItoPython:
         Returns:
             None
         """
-        # Step 1: Import all custom nodes if we need to
-        if self.needs_init_custom_nodes:
-            import_custom_nodes()
-        else:
-            # If they're already imported, we don't know which nodes are custom nodes, so we need to import all of them
-            self.base_node_class_mappings = {}
-
-        # Step 2: Read JSON data from the input file
+        # Step 1: Read JSON data from the input file
         if self.input_file:
             data = FileHandler.read_json_file(self.input_file)
         else:
             data = json.loads(self.workflow)
+
+        # Step 2: Initialize extra/custom nodes when requested or when the workflow references
+        # a node class that is not currently loaded in the runtime.
+        missing_node_types = {
+            node_data["class_type"]
+            for node_data in data.values()
+            if node_data["class_type"] not in self.node_class_mappings
+        }
+        if self.needs_init_custom_nodes or missing_node_types:
+            import_custom_nodes()
+            self.base_node_class_mappings = copy.deepcopy(self.node_class_mappings)
 
         # Step 3: Determine the load order
         load_order_determiner = LoadOrderDeterminer(data, self.node_class_mappings)

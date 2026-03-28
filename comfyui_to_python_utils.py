@@ -3,16 +3,30 @@ from typing import Sequence, Mapping, Any, Union
 import sys
 
 
+def get_comfyui_path() -> str:
+    """Return the configured ComfyUI path, preferring COMFYUI_PATH when set."""
+    comfyui_path = os.environ.get("COMFYUI_PATH")
+    if comfyui_path:
+        return comfyui_path
+    return find_path("ComfyUI")
+
+
 def import_custom_nodes() -> None:
     """Find all custom nodes in the custom_nodes folder and add those node objects to NODE_CLASS_MAPPINGS
 
     This function sets up a new asyncio event loop, initializes the PromptServer,
     creates a PromptQueue, and initializes the custom nodes.
     """
+    comfyui_path = get_comfyui_path()
+    if comfyui_path and comfyui_path not in sys.path:
+        sys.path.insert(0, comfyui_path)
+
     import asyncio
     import execution
     from nodes import init_extra_nodes
-    sys.path.insert(0, find_path("ComfyUI"))
+    if comfyui_path in sys.path:
+        sys.path.remove(comfyui_path)
+    sys.path.insert(0, comfyui_path)
     import server
 
     # Creating a new event loop and setting it as the default loop
@@ -57,9 +71,11 @@ def add_comfyui_directory_to_sys_path() -> None:
     """
     Add 'ComfyUI' to the sys.path
     """
-    comfyui_path = find_path("ComfyUI")
+    comfyui_path = get_comfyui_path()
     if comfyui_path is not None and os.path.isdir(comfyui_path):
-        sys.path.append(comfyui_path)
+        if comfyui_path in sys.path:
+            sys.path.remove(comfyui_path)
+        sys.path.insert(0, comfyui_path)
         print(f"'{comfyui_path}' added to sys.path")
 
 
