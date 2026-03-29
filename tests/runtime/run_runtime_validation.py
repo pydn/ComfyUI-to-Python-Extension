@@ -109,6 +109,40 @@ class PassthroughText:
         return (text,)
 
 
+class SplitText:
+    CATEGORY = "utils"
+    FUNCTION = "split"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "text": ("STRING",),
+            }
+        }
+
+    def split(self, text):
+        left, right = text.split("|", 1)
+        return (left, right)
+
+
+class JoinText:
+    CATEGORY = "utils"
+    FUNCTION = "join"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "left": ("STRING",),
+                "right": ("STRING",),
+            }
+        }
+
+    def join(self, left, right):
+        return (f"{left}::{right}",)
+
+
 class UpscaleModelLoader:
     CATEGORY = "loaders"
     FUNCTION = "load_model"
@@ -231,6 +265,22 @@ FIXTURES = {
         path=FIXTURE_DIR / "subgraph-identifiers.json",
         mapping_factory=lambda: {
             "RegexReplace": RegexReplace,
+            "PassthroughText": PassthroughText,
+        },
+    ),
+    "reused-node-class-branches": FixtureConfig(
+        name="reused-node-class-branches",
+        path=FIXTURE_DIR / "reused-node-class-branches.json",
+        mapping_factory=lambda: {
+            "PassthroughText": PassthroughText,
+            "JoinText": JoinText,
+        },
+    ),
+    "secondary-output-selection": FixtureConfig(
+        name="secondary-output-selection",
+        path=FIXTURE_DIR / "secondary-output-selection.json",
+        mapping_factory=lambda: {
+            "SplitText": SplitText,
             "PassthroughText": PassthroughText,
         },
     ),

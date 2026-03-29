@@ -1,0 +1,17 @@
+{
+  "1": {
+    "class_type": "SplitText",
+    "inputs": {
+      "text": "alpha|omega"
+    }
+  },
+  "2": {
+    "class_type": "PassthroughText",
+    "inputs": {
+      "text": [
+        "1",
+        1
+      ]
+    }
+  }
+}

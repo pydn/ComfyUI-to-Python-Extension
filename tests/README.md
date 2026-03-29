@@ -5,6 +5,8 @@ This directory contains two test paths:
 - unit tests for exporter behavior
 - runtime validation for committed workflow fixtures
 
+Use the lightweight path for routine contributor validation, and use the runtime path when you need end-to-end confidence against a real ComfyUI checkout.
+
 ## Prerequisites
 
 - Run commands from the repo root.
@@ -30,10 +32,16 @@ The current runtime-capable fixtures require these model files in the target Com
 
 ## Unit Tests
 
-Run the current unit test module:
+Run the exporter-focused unit test module:
 
 ```bash
 uv run python -m unittest tests.test_upscale_model_loader_export
+```
+
+Run the runtime-harness unit test module:
+
+```bash
+uv run python -m unittest tests.test_runtime_validation_harness
 ```
 
 Run all `unittest`-discoverable tests under `tests`:
@@ -49,6 +57,7 @@ The runtime harness lives at `tests/runtime/run_runtime_validation.py`.
 ### Fast Tier
 
 Fast tier validates export behavior against committed fixtures without requiring a full ComfyUI runtime for every fixture.
+This is the recommended default validation lane for routine changes.
 
 Run all fast-tier compatible fixtures:
 
@@ -65,6 +74,7 @@ uv run python tests/runtime/run_runtime_validation.py --tier fast --fixture unsa
 ### Runtime Tier
 
 Runtime tier exports inside a real ComfyUI checkout and executes generated Python for runtime-capable fixtures.
+This is the heavier validation lane for changes that need end-to-end runtime confidence.
 
 Run all runtime-capable fixtures:
 
@@ -92,11 +102,15 @@ Current committed fixtures:
 - `text-to-image`
 - `unsafe-kwargs`
 - `subgraph-identifiers`
+- `reused-node-class-branches`
+- `secondary-output-selection`
 
 Notes:
 
 - `--tier runtime` only runs fixtures marked runtime-capable.
 - `--tier fast` only runs fixtures with local test mappings.
+- `reused-node-class-branches` protects repeated node-class usage and branch wiring in the fast tier.
+- `secondary-output-selection` protects non-zero output index wiring in the fast tier.
 
 ## Troubleshooting
 
