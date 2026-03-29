@@ -13,18 +13,10 @@ sys.path.append(ext_dir)
 try:
     import black
 except ImportError:
-    print("Unable to import requirements for ComfyUI-SaveAsScript.")
-    print("Installing...")
-
-    import importlib
-
-    spec = importlib.util.spec_from_file_location(
-        "impact_install", os.path.join(os.path.dirname(__file__), "install.py")
-    )
-    impact_install = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(impact_install)
-
-    print("Successfully installed. Hopefully, at least.")
+    raise ImportError(
+        "ComfyUI-to-Python-Extension requires the project dependencies to be installed. "
+        f"Run 'uv sync' in {ext_dir} with Python 3.12+ before loading this extension."
+    ) from None
 
 # Prevent reimporting of custom nodes
 os.environ["RUNNING_IN_COMFYUI"] = "TRUE"
