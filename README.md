@@ -13,6 +13,7 @@ This project supports:
 ## Install
 
 Choose the setup that matches how you want to use the project.
+This project supports Python 3.12 and newer.
 
 ### Web UI extension (`File -> Save As Script`)
 
@@ -65,12 +66,13 @@ In current ComfyUI builds, `Save As Script` is typically available under:
 `File -> Save As Script`
 
 The command downloads a generated `.py` file.
+The current UI export uses the default filename `workflow_api.py` so it works in ComfyUI Desktop without relying on `prompt()`.
 
 ![Save As Script](images/save_as_script.png)
 
 Notes:
 - menu placement can differ between frontend versions
-- ComfyUI Desktop may fail on the current filename prompt flow; use the CLI flow below if that happens
+- the Web UI export uses a fixed default filename rather than asking for one interactively
 
 ## CLI Export
 
@@ -118,14 +120,24 @@ The generated script is a workflow export. It does not automatically turn workfl
 
 Scripts exported directly from `File -> Save As Script` in the ComfyUI UI already include the frontend workflow metadata needed for drag-and-drop reimport. Images saved by those scripts can be dropped back into ComfyUI and reopen with the original workflow metadata.
 
+Generated scripts reuse ComfyUI's runtime argument parser during bootstrap, so common ComfyUI memory flags such as `--highvram`, `--normalvram`, `--lowvram`, `--novram`, `--cpu`, and `--disable-smart-memory` can be passed directly to the exported `.py` file.
+
+Lifecycle notes:
+- exported scripts are single-shot workflow runners, not long-lived ComfyUI prompt servers
+- they do not implement Web UI prompt/result caching across repeated service calls
+- exported `main()` now performs best-effort ComfyUI model/cache cleanup in a `finally` block
+- set `COMFYUI_TOPYTHON_UNLOAD_MODELS=1` or call `main(unload_models=True)` if an embedded or repeated-call host should aggressively unload models after each run instead of preserving them for reuse
+
 ## Troubleshooting
 
+- unsupported Python version:
+  use Python 3.12 or newer, then rerun `uv sync`
 - `Save As Script` not visible:
   check your current ComfyUI menu/frontend version and look under `File`
 - `Save As Script` not visible after restart:
   make sure this repo is discoverable by ComfyUI through `custom_nodes` by cloning it into `ComfyUI/custom_nodes`, symlinking it there, or adding an external `custom_nodes` path in `extra_model_paths.yaml`
-- Desktop says `prompt()` is unsupported:
-  use the CLI export flow instead
+- save uses the default filename:
+  rename `workflow_api.py` after download if you want a different local filename
 - ComfyUI cannot be found:
   set `COMFYUI_PATH`
 - models or paths are missing at runtime:

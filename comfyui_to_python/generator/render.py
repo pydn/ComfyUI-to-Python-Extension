@@ -9,6 +9,7 @@ from .generated_helpers import (
     add_comfyui_directory_to_sys_path,
     add_extra_model_paths,
     bootstrap_comfyui_runtime,
+    cleanup_comfyui_runtime,
     find_path,
     get_comfyui_path,
     get_value_at_index,
@@ -36,6 +37,7 @@ class WorkflowRenderer:
             add_comfyui_directory_to_sys_path,
             add_extra_model_paths,
             bootstrap_comfyui_runtime,
+            cleanup_comfyui_runtime,
         ]:
             func_strings.append(f"\n{inspect.getsource(func)}")
 
@@ -74,7 +76,7 @@ class WorkflowRenderer:
 
         execution_section = [
             "# Workflow execution",
-            "def main():",
+            "def main(unload_models: bool | None = None):",
             "    bootstrap_comfyui_runtime()",
             "    add_extra_model_paths()",
         ]
@@ -88,19 +90,26 @@ class WorkflowRenderer:
                 "",
                 "    import torch",
                 "",
-                "    with torch.inference_mode():",
+                "    try:",
+                "        with torch.inference_mode():",
             ]
         )
         execution_section.extend(
             self.build_function_body(
-                plan.special_functions_code, "pass", indentation="        "
+                plan.special_functions_code, "pass", indentation="            "
             ).splitlines()
         )
-        execution_section.append(f"        for q in range({plan.queue_size}):")
+        execution_section.append(f"            for q in range({plan.queue_size}):")
         execution_section.extend(
             self.build_function_body(
-                plan.loop_code, "pass", indentation="            "
+                plan.loop_code, "pass", indentation="                "
             ).splitlines()
+        )
+        execution_section.extend(
+            [
+                "    finally:",
+                "        cleanup_comfyui_runtime(unload_models=unload_models)",
+            ]
         )
 
         entrypoint_section = [

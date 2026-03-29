@@ -94,6 +94,34 @@ def bootstrap_comfyui_runtime() -> None:
         os.environ["OCL_SET_SVM_SIZE"] = "262144"
 
 
+def cleanup_comfyui_runtime(unload_models: bool | None = None) -> None:
+    """Best-effort cleanup for embedded or repeated generated-script execution."""
+    import gc
+
+    should_unload = unload_models
+    if should_unload is None:
+        should_unload = os.environ.get("COMFYUI_TOPYTHON_UNLOAD_MODELS", "").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+    try:
+        import comfy.model_management as model_management
+    except ModuleNotFoundError:
+        gc.collect()
+        return
+
+    if hasattr(model_management, "cleanup_models_gc"):
+        model_management.cleanup_models_gc()
+    if should_unload and hasattr(model_management, "unload_all_models"):
+        model_management.unload_all_models()
+    if hasattr(model_management, "soft_empty_cache"):
+        model_management.soft_empty_cache()
+    gc.collect()
+
+
 def import_custom_nodes() -> None:
     """Initialize ComfyUI custom nodes in the exporter runtime."""
     comfyui_path = get_comfyui_path()
