@@ -1,0 +1,27 @@
+{
+  "1:10": {
+    "class_type": "PassthroughText",
+    "inputs": {
+      "text": "left branch"
+    }
+  },
+  "1:20": {
+    "class_type": "PassthroughText",
+    "inputs": {
+      "text": "right branch"
+    }
+  },
+  "2": {
+    "class_type": "JoinText",
+    "inputs": {
+      "left": [
+        "1:10",
+        0
+      ],
+      "right": [
+        "1:20",
+        0
+      ]
+    }
+  }
+}

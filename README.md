@@ -79,16 +79,22 @@ Notes:
 3. Run the exporter:
 
 ```bash
-uv run python comfyui_to_python.py
+uv run python -m comfyui_to_python
 ```
 
 Options:
 
 ```bash
-uv run python comfyui_to_python.py \
+uv run python -m comfyui_to_python \
   --input_file workflow_api.json \
   --output_file workflow_api.py \
   --queue_size 10
+```
+
+The legacy wrapper still works if you prefer it:
+
+```bash
+uv run python comfyui_to_python.py
 ```
 
 Flags:

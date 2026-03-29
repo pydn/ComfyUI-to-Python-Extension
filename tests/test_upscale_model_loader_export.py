@@ -1,4 +1,5 @@
 import json
+import sys
 import tempfile
 import unittest
 from io import StringIO
@@ -115,6 +116,92 @@ class HiddenPromptSeedNode:
 
 
 class UpscaleModelLoaderExportTest(unittest.TestCase):
+    def test_top_level_module_preserves_exporter_entrypoints(self):
+        from comfyui_to_python import main
+
+        self.assertTrue(callable(ComfyUItoPython))
+        self.assertTrue(callable(run))
+        self.assertTrue(callable(main))
+
+    def test_export_defers_comfyui_bootstrap_until_main(self):
+        workflow = {
+            "1": {
+                "class_type": "LoadImage",
+                "inputs": {
+                    "image": "example.png",
+                },
+            }
+        }
+
+        output = StringIO()
+        ComfyUItoPython(
+            workflow=json.dumps(workflow),
+            output_file=output,
+            node_class_mappings={
+                "LoadImage": LoadImage,
+            },
+        )
+
+        generated = output.getvalue()
+
+        self.assertIn("def bootstrap_comfyui_runtime()", generated)
+        self.assertIn("import comfy.options", generated)
+        self.assertIn("comfy.options.enable_args_parsing()", generated)
+        self.assertIn("import cuda_malloc", generated)
+        self.assertNotIn("\nbootstrap_comfyui_runtime()\n", generated)
+        self.assertIn(
+            "def main():\n    bootstrap_comfyui_runtime()\n    add_extra_model_paths()",
+            generated,
+        )
+        self.assertLess(
+            generated.index("def bootstrap_comfyui_runtime()"), generated.index("def main():")
+        )
+        main_section = generated[generated.index("def main():") :]
+        self.assertIn(
+            "def main():\n"
+            "    bootstrap_comfyui_runtime()\n"
+            "    add_extra_model_paths()",
+            main_section,
+        )
+        self.assertLess(
+            main_section.index("bootstrap_comfyui_runtime()"),
+            main_section.index("add_extra_model_paths()"),
+        )
+        self.assertLess(
+            main_section.index("add_extra_model_paths()"),
+            main_section.index("import torch"),
+        )
+        self.assertLess(generated.index("import cuda_malloc"), generated.index("import torch"))
+
+    def test_generated_module_import_does_not_parse_cli_args(self):
+        workflow = {
+            "1": {
+                "class_type": "LoadImage",
+                "inputs": {
+                    "image": "example.png",
+                },
+            }
+        }
+
+        output = StringIO()
+        ComfyUItoPython(
+            workflow=json.dumps(workflow),
+            output_file=output,
+            node_class_mappings={
+                "LoadImage": LoadImage,
+            },
+        )
+
+        generated = output.getvalue()
+
+        self.assertNotIn("\nimport torch\n", generated)
+
+        globals_dict = {"__name__": "generated_workflow_module"}
+        with patch.object(sys, "argv", ["generated_workflow.py", "--wrapper-flag"]):
+            exec(generated, globals_dict)
+
+        self.assertTrue(callable(globals_dict["main"]))
+
     def test_upscale_workflow_uses_direct_upscale_model_loader_init(self):
         workflow = {
             "1": {
@@ -151,8 +238,8 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
 
         generated = output.getvalue()
 
-        self.assertIn("from nodes import NODE_CLASS_MAPPINGS", generated)
-        self.assertIn(f"from {LoadImage.__module__} import (", generated)
+        self.assertIn("    from nodes import NODE_CLASS_MAPPINGS", generated)
+        self.assertIn(f"    from {LoadImage.__module__} import (", generated)
         self.assertIn("LoadImage,", generated)
         self.assertIn("UpscaleModelLoader,", generated)
         self.assertIn("ImageUpscaleWithModel,", generated)
@@ -196,10 +283,11 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
 
         generated = output.getvalue()
 
-        self.assertIn('extra_pnginfo = {', generated)
-        self.assertIn('"workflow": json.loads(', generated)
+        self.assertIn("def build_extra_pnginfo()", generated)
+        self.assertIn('"workflow": {', generated)
         self.assertIn('"version": 0.4', generated)
         self.assertIn('"nodes": []', generated)
+        self.assertNotIn('"workflow": json.loads(', generated)
         self.assertNotIn('"source": "workflow_api"', generated)
 
     def test_export_without_frontend_workflow_leaves_png_workflow_metadata_absent(self):
@@ -223,7 +311,8 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
 
         generated = output.getvalue()
 
-        self.assertIn("extra_pnginfo = None", generated)
+        self.assertIn("def build_extra_pnginfo()", generated)
+        self.assertIn("return None", generated)
         self.assertNotIn('"workflow": json.loads(', generated)
 
     def test_export_preserves_unique_variable_names_for_subgraph_node_ids(self):
@@ -296,8 +385,65 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
 
             generated = output_file.read_text(encoding="utf-8")
 
-        self.assertIn("extra_pnginfo = None", generated)
+        self.assertIn("def build_extra_pnginfo()", generated)
+        self.assertIn("return None", generated)
         self.assertNotIn('"workflow": json.loads(', generated)
+
+    def test_export_structures_generated_script_into_readable_sections(self):
+        workflow = {
+            "1": {
+                "class_type": "LoadImage",
+                "inputs": {
+                    "image": "example.png",
+                },
+            },
+            "2": {
+                "class_type": "UpscaleModelLoader",
+                "inputs": {
+                    "model_name": "RealESRGAN_x4plus.safetensors",
+                },
+            },
+            "3": {
+                "class_type": "ImageUpscaleWithModel",
+                "inputs": {
+                    "upscale_model": ["2", 0],
+                    "image": ["1", 0],
+                },
+            },
+        }
+
+        output = StringIO()
+        ComfyUItoPython(
+            workflow=json.dumps(workflow),
+            output_file=output,
+            node_class_mappings={
+                "LoadImage": LoadImage,
+                "UpscaleModelLoader": UpscaleModelLoader,
+                "ImageUpscaleWithModel": ImageUpscaleWithModel,
+            },
+        )
+
+        generated = output.getvalue()
+
+        self.assertIn("# Imports", generated)
+        self.assertIn("# Workflow data", generated)
+        self.assertIn("# Workflow execution", generated)
+        self.assertIn("# Entrypoint", generated)
+        self.assertIn("def build_workflow()", generated)
+        self.assertIn("def build_extra_pnginfo()", generated)
+        self.assertIn("def main()", generated)
+        self.assertIn("bootstrap_comfyui_runtime()", generated)
+        self.assertNotIn("def initialize_workflow()", generated)
+        self.assertNotIn("def run_once(", generated)
+        self.assertIn("with torch.inference_mode():", generated)
+        self.assertIn("for q in range(1):", generated)
+        self.assertIn("workflow = build_workflow()", generated)
+        self.assertIn("extra_pnginfo = build_extra_pnginfo()", generated)
+        self.assertNotIn('workflow = json.loads("', generated)
+        self.assertLess(
+            generated.index("def build_workflow()"),
+            generated.index("def main()"),
+        )
 
     def test_hidden_metadata_kwargs_follow_function_signature(self):
         workflow = {
