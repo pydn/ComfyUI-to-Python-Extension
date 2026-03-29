@@ -1,0 +1,8 @@
+{
+  "1": {
+    "class_type": "StringSeedNode",
+    "inputs": {
+      "seed": "seed-placeholder"
+    }
+  }
+}

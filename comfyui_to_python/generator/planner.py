@@ -48,6 +48,7 @@ class WorkflowPlanner:
         for idx, data, is_special_function in load_order:
             inputs, class_type = data["inputs"], data["class_type"]
             input_types = self.node_class_mappings[class_type].INPUT_TYPES()
+            input_value_types = self.get_input_value_types(input_types)
             class_def = self.node_class_mappings[class_type]()
 
             missing_required_variable = False
@@ -106,7 +107,7 @@ class WorkflowPlanner:
             )
             inputs = self.update_inputs(inputs, executed_variables)
             seed_sync_code = self.create_prompt_seed_sync_code(
-                idx, inputs, is_special_function
+                idx, inputs, input_value_types, is_special_function
             )
 
             target_lines = special_functions_code if is_special_function else code
@@ -118,6 +119,7 @@ class WorkflowPlanner:
                     class_def.FUNCTION,
                     executed_variables[idx],
                     is_special_function,
+                    input_value_types=input_value_types,
                     **inputs,
                 )
             )
@@ -138,16 +140,24 @@ class WorkflowPlanner:
         func: str,
         variable_name: str,
         is_special_function: bool,
+        input_value_types: dict[str, str] | None = None,
         **kwargs,
     ) -> str:
-        args = ", ".join(self.format_arg(key, value) for key, value in kwargs.items())
+        args = ", ".join(
+            self.format_arg(key, value, (input_value_types or {}).get(key))
+            for key, value in kwargs.items()
+        )
         code = f"{variable_name} = {obj_name}.{func}({args})\n"
         if not is_special_function:
             code = f"\t{code}"
         return code
 
     def create_prompt_seed_sync_code(
-        self, node_id: str, inputs: dict, is_special_function: bool
+        self,
+        node_id: str,
+        inputs: dict,
+        input_value_types: dict[str, str],
+        is_special_function: bool,
     ) -> list[str]:
         seed_sync_lines = []
         for key in ("seed", "noise_seed"):
@@ -156,8 +166,11 @@ class WorkflowPlanner:
             randomized_seed_variable = (
                 f"node_{self.sanitize_node_id(str(node_id))}_{self.clean_variable_name(key)}"
             )
+            randomized_seed_code = self.get_randomized_seed_code(
+                input_value_types.get(key)
+            )
             seed_sync_lines.append(
-                f'{randomized_seed_variable} = prompt["{node_id}"]["inputs"]["{key}"] = random.randint(1, 2**64)'
+                f'{randomized_seed_variable} = prompt["{node_id}"]["inputs"]["{key}"] = {randomized_seed_code}'
             )
             inputs[key] = {"variable_name": randomized_seed_variable}
 
@@ -167,21 +180,41 @@ class WorkflowPlanner:
         indentation = "" if is_special_function else "\t"
         return [f"{indentation}{line}\n" for line in seed_sync_lines]
 
-    def format_arg(self, key: str, value: Any) -> str:
-        value_code = self.format_arg_value(key, value)
+    def format_arg(self, key: str, value: Any, input_value_type: str | None = None) -> str:
+        value_code = self.format_arg_value(key, value, input_value_type)
         if key.isidentifier() and not keyword.iskeyword(key):
             return f"{key}={value_code}"
         return f"**{{{json.dumps(key)}: {value_code}}}"
 
     @staticmethod
-    def format_arg_value(key: str, value: Any) -> str:
+    def format_arg_value(
+        key: str, value: Any, input_value_type: str | None = None
+    ) -> str:
         if isinstance(value, dict) and "variable_name" in value:
             return value["variable_name"]
         if key == "noise_seed" or key == "seed":
-            return "random.randint(1, 2**64)"
+            return WorkflowPlanner.get_randomized_seed_code(input_value_type)
         if isinstance(value, str):
             return json.dumps(value)
         return repr(value)
+
+    @staticmethod
+    def get_input_value_types(input_types: dict) -> dict[str, str]:
+        value_types = {}
+        for section in ("required", "optional", "hidden"):
+            for key, value in input_types.get(section, {}).items():
+                if isinstance(value, tuple) and value:
+                    value_types[key] = value[0]
+                elif isinstance(value, str):
+                    value_types[key] = value
+        return value_types
+
+    @staticmethod
+    def get_randomized_seed_code(input_value_type: str | None) -> str:
+        randomized_seed_code = "random.randint(1, 2**64)"
+        if input_value_type == "STRING":
+            return f"str({randomized_seed_code})"
+        return randomized_seed_code
 
     def get_class_info(self, class_type: str) -> tuple[str, tuple[str, str], str]:
         class_obj = self.base_node_class_mappings.get(class_type)

@@ -1,0 +1,41 @@
+{
+  "11": {
+    "class_type": "DualClipLoader",
+    "inputs": {
+      "clip_name": "clip.safetensors"
+    }
+  },
+  "633": {
+    "class_type": "AnySwitchRgthree",
+    "inputs": {
+      "model": "model-placeholder"
+    }
+  },
+  "631": {
+    "class_type": "PowerLoraLoaderRgthree",
+    "inputs": {
+      "PowerLoraLoaderHeaderWidget": {
+        "type": "PowerLoraLoaderHeaderWidget"
+      },
+      "lora_1": {
+        "on": false,
+        "lora": "lora.safetensors",
+        "strength": 1.2
+      },
+      "lora_2": {
+        "on": false,
+        "lora": "lora2.safetensors",
+        "strength": 0.7
+      },
+      "\u2795 Add Lora": "",
+      "model": [
+        "633",
+        0
+      ],
+      "clip": [
+        "11",
+        0
+      ]
+    }
+  }
+}

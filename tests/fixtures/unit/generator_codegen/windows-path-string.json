@@ -1,0 +1,8 @@
+{
+  "1": {
+    "class_type": "WindowsPathNode",
+    "inputs": {
+      "path": "C:\\ComfyUI\\models\\upscale_models\\RealESRGAN_x4plus.safetensors"
+    }
+  }
+}
