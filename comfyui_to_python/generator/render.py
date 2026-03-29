@@ -76,8 +76,6 @@ class WorkflowRenderer:
             "# Workflow execution",
             "def main():",
             "    bootstrap_comfyui_runtime()",
-            "    import torch",
-            "",
             "    add_extra_model_paths()",
         ]
         if custom_nodes_call:
@@ -87,6 +85,8 @@ class WorkflowRenderer:
             execution_section.extend(f"    {line}" for line in imports_code)
         execution_section.extend(
             [
+                "",
+                "    import torch",
                 "",
                 "    with torch.inference_mode():",
             ]

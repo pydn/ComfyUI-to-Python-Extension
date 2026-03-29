@@ -165,8 +165,6 @@ extra_pnginfo = build_extra_pnginfo()
 # Workflow execution
 def main():
     bootstrap_comfyui_runtime()
-    import torch
-
     add_extra_model_paths()
 
     # Node imports
@@ -179,6 +177,8 @@ def main():
         SaveImage,
         VAEDecode,
     )
+
+    import torch
 
     with torch.inference_mode():
         checkpointloadersimple = CheckpointLoaderSimple()

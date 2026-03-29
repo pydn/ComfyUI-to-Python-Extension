@@ -105,14 +105,6 @@ def bootstrap_comfyui_runtime() -> None:
         os.environ["OCL_SET_SVM_SIZE"] = "262144"
 
 
-# Runtime support
-
-bootstrap_comfyui_runtime()
-import torch
-
-add_extra_model_paths()
-
-
 def import_custom_nodes() -> None:
     """Initialize ComfyUI custom nodes in the exporter runtime."""
     comfyui_path = get_comfyui_path()
@@ -166,14 +158,19 @@ workflow = build_workflow()
 prompt = json.loads(json.dumps(workflow))
 extra_pnginfo = build_extra_pnginfo()
 
+
 # Workflow execution
-# Node imports
-from nodes import LoadImage, NODE_CLASS_MAPPINGS, SaveImage
-
-
 def main():
+    bootstrap_comfyui_runtime()
+    add_extra_model_paths()
+    import_custom_nodes()
+
+    # Node imports
+    from nodes import LoadImage, NODE_CLASS_MAPPINGS, SaveImage
+
+    import torch
+
     with torch.inference_mode():
-        import_custom_nodes()
         loadimage = LoadImage()
         loadimage_1 = loadimage.load_image(image="e2e_upscale_input.png")
         upscalemodelloader = NODE_CLASS_MAPPINGS["UpscaleModelLoader"]()

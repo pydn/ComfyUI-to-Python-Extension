@@ -149,9 +149,28 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
         self.assertIn("comfy.options.enable_args_parsing()", generated)
         self.assertIn("import cuda_malloc", generated)
         self.assertNotIn("\nbootstrap_comfyui_runtime()\n", generated)
-        self.assertIn("def main():\n    bootstrap_comfyui_runtime()\n    import torch", generated)
-        self.assertLess(generated.index("def bootstrap_comfyui_runtime()"), generated.index("def main():"))
-        self.assertLess(generated.index("bootstrap_comfyui_runtime()"), generated.index("import torch"))
+        self.assertIn(
+            "def main():\n    bootstrap_comfyui_runtime()\n    add_extra_model_paths()",
+            generated,
+        )
+        self.assertLess(
+            generated.index("def bootstrap_comfyui_runtime()"), generated.index("def main():")
+        )
+        main_section = generated[generated.index("def main():") :]
+        self.assertIn(
+            "def main():\n"
+            "    bootstrap_comfyui_runtime()\n"
+            "    add_extra_model_paths()",
+            main_section,
+        )
+        self.assertLess(
+            main_section.index("bootstrap_comfyui_runtime()"),
+            main_section.index("add_extra_model_paths()"),
+        )
+        self.assertLess(
+            main_section.index("add_extra_model_paths()"),
+            main_section.index("import torch"),
+        )
         self.assertLess(generated.index("import cuda_malloc"), generated.index("import torch"))
 
     def test_generated_module_import_does_not_parse_cli_args(self):
