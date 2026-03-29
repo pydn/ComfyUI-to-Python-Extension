@@ -3,6 +3,7 @@ name = "comfyui-to-python-extension"
 description = "This custom node allows you to generate pure python code from your ComfyUI workflow with the click of a button. Great for rapid experimentation or production deployment."
 version = "2.0.0"
 license = { text = "MIT License" }
+requires-python = ">=3.12"
 dependencies = ["black"]
 
 [project.urls]
