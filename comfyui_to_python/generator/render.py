@@ -47,10 +47,6 @@ class WorkflowRenderer:
             "import sys",
             "from typing import Sequence, Mapping, Any, Union",
         ] + func_strings
-        static_imports.append("\n# Runtime support")
-        static_imports.append(
-            "\nbootstrap_comfyui_runtime()\nimport torch\nadd_extra_model_paths()\n"
-        )
 
         if plan.custom_nodes:
             static_imports.append(f"\n{inspect.getsource(import_custom_nodes)}\n")
@@ -76,17 +72,25 @@ class WorkflowRenderer:
             "extra_pnginfo = build_extra_pnginfo()",
         ]
 
-        execution_section = ["# Workflow execution"]
+        execution_section = [
+            "# Workflow execution",
+            "def main():",
+            "    bootstrap_comfyui_runtime()",
+            "    import torch",
+            "",
+            "    add_extra_model_paths()",
+        ]
+        if custom_nodes_call:
+            execution_section.append(f"    {custom_nodes_call}")
         if imports_code:
-            execution_section.extend(["# Node imports", *imports_code, ""])
+            execution_section.extend(["", "    # Node imports"])
+            execution_section.extend(f"    {line}" for line in imports_code)
         execution_section.extend(
             [
-                "def main():",
+                "",
                 "    with torch.inference_mode():",
             ]
         )
-        if custom_nodes_call:
-            execution_section.append(f"        {custom_nodes_call}")
         execution_section.extend(
             self.build_function_body(
                 plan.special_functions_code, "pass", indentation="        "

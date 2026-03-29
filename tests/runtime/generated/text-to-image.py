@@ -105,14 +105,6 @@ def bootstrap_comfyui_runtime() -> None:
         os.environ["OCL_SET_SVM_SIZE"] = "262144"
 
 
-# Runtime support
-
-bootstrap_comfyui_runtime()
-import torch
-
-add_extra_model_paths()
-
-
 # Workflow data
 def build_workflow() -> dict[str, Any]:
     return {
@@ -169,20 +161,25 @@ workflow = build_workflow()
 prompt = json.loads(json.dumps(workflow))
 extra_pnginfo = build_extra_pnginfo()
 
+
 # Workflow execution
-# Node imports
-from nodes import (
-    CLIPTextEncode,
-    CheckpointLoaderSimple,
-    EmptyLatentImage,
-    KSampler,
-    NODE_CLASS_MAPPINGS,
-    SaveImage,
-    VAEDecode,
-)
-
-
 def main():
+    bootstrap_comfyui_runtime()
+    import torch
+
+    add_extra_model_paths()
+
+    # Node imports
+    from nodes import (
+        CLIPTextEncode,
+        CheckpointLoaderSimple,
+        EmptyLatentImage,
+        KSampler,
+        NODE_CLASS_MAPPINGS,
+        SaveImage,
+        VAEDecode,
+    )
+
     with torch.inference_mode():
         checkpointloadersimple = CheckpointLoaderSimple()
         checkpointloadersimple_1 = checkpointloadersimple.load_checkpoint(

@@ -1,4 +1,5 @@
 import json
+import sys
 import tempfile
 import unittest
 from io import StringIO
@@ -122,7 +123,7 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
         self.assertTrue(callable(run))
         self.assertTrue(callable(main))
 
-    def test_export_places_comfyui_bootstrap_before_torch_import(self):
+    def test_export_defers_comfyui_bootstrap_until_main(self):
         workflow = {
             "1": {
                 "class_type": "LoadImage",
@@ -147,18 +148,40 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
         self.assertIn("import comfy.options", generated)
         self.assertIn("comfy.options.enable_args_parsing()", generated)
         self.assertIn("import cuda_malloc", generated)
-        self.assertLess(
-            generated.index("def bootstrap_comfyui_runtime()"),
-            generated.index("import torch"),
+        self.assertNotIn("\nbootstrap_comfyui_runtime()\n", generated)
+        self.assertIn("def main():\n    bootstrap_comfyui_runtime()\n    import torch", generated)
+        self.assertLess(generated.index("def bootstrap_comfyui_runtime()"), generated.index("def main():"))
+        self.assertLess(generated.index("bootstrap_comfyui_runtime()"), generated.index("import torch"))
+        self.assertLess(generated.index("import cuda_malloc"), generated.index("import torch"))
+
+    def test_generated_module_import_does_not_parse_cli_args(self):
+        workflow = {
+            "1": {
+                "class_type": "LoadImage",
+                "inputs": {
+                    "image": "example.png",
+                },
+            }
+        }
+
+        output = StringIO()
+        ComfyUItoPython(
+            workflow=json.dumps(workflow),
+            output_file=output,
+            node_class_mappings={
+                "LoadImage": LoadImage,
+            },
         )
-        self.assertLess(
-            generated.index("bootstrap_comfyui_runtime()"),
-            generated.index("import torch"),
-        )
-        self.assertLess(
-            generated.index("import cuda_malloc"),
-            generated.index("import torch"),
-        )
+
+        generated = output.getvalue()
+
+        self.assertNotIn("\nimport torch\n", generated)
+
+        globals_dict = {"__name__": "generated_workflow_module"}
+        with patch.object(sys, "argv", ["generated_workflow.py", "--wrapper-flag"]):
+            exec(generated, globals_dict)
+
+        self.assertTrue(callable(globals_dict["main"]))
 
     def test_upscale_workflow_uses_direct_upscale_model_loader_init(self):
         workflow = {
@@ -196,8 +219,8 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
 
         generated = output.getvalue()
 
-        self.assertIn("from nodes import NODE_CLASS_MAPPINGS", generated)
-        self.assertIn(f"from {LoadImage.__module__} import (", generated)
+        self.assertIn("    from nodes import NODE_CLASS_MAPPINGS", generated)
+        self.assertIn(f"    from {LoadImage.__module__} import (", generated)
         self.assertIn("LoadImage,", generated)
         self.assertIn("UpscaleModelLoader,", generated)
         self.assertIn("ImageUpscaleWithModel,", generated)
@@ -384,13 +407,13 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
         generated = output.getvalue()
 
         self.assertIn("# Imports", generated)
-        self.assertIn("# Runtime support", generated)
         self.assertIn("# Workflow data", generated)
         self.assertIn("# Workflow execution", generated)
         self.assertIn("# Entrypoint", generated)
         self.assertIn("def build_workflow()", generated)
         self.assertIn("def build_extra_pnginfo()", generated)
         self.assertIn("def main()", generated)
+        self.assertIn("bootstrap_comfyui_runtime()", generated)
         self.assertNotIn("def initialize_workflow()", generated)
         self.assertNotIn("def run_once(", generated)
         self.assertIn("with torch.inference_mode():", generated)
