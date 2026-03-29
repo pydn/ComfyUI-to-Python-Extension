@@ -1,0 +1,27 @@
+{
+  "33": {
+    "class_type": "VaeDecode",
+    "inputs": {
+      "samples": "latent-placeholder"
+    }
+  },
+  "42:0": {
+    "class_type": "UpscaleModelLoader",
+    "inputs": {
+      "model_name": "4x-ultrasharp.safetensors"
+    }
+  },
+  "42:1": {
+    "class_type": "ImageUpscaleWithModel",
+    "inputs": {
+      "upscale_model": [
+        "42:0",
+        0
+      ],
+      "image": [
+        "33",
+        0
+      ]
+    }
+  }
+}
