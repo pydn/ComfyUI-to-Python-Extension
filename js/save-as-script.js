@@ -1,6 +1,22 @@
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
-import { $el } from "../../scripts/ui.js";
+
+function $el(tag, options = {}) {
+	const element = document.createElement(tag);
+	const { parent, style, ...props } = options;
+
+	if (style) {
+		Object.assign(element.style, style);
+	}
+
+	Object.assign(element, props);
+
+	if (parent) {
+		parent.appendChild(element);
+	}
+
+	return element;
+}
 
 const extension = {
 	name: "Comfy.SaveAsScript",
