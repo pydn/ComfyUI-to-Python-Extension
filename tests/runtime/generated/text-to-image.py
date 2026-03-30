@@ -105,6 +105,46 @@ def bootstrap_comfyui_runtime() -> None:
         os.environ["OCL_SET_SVM_SIZE"] = "262144"
 
 
+def cleanup_comfyui_runtime(unload_models: bool | None = None) -> None:
+    """Best-effort cleanup for embedded or repeated generated-script execution."""
+    import gc
+
+    def run_cleanup_hook(name: str, should_run: bool = True) -> None:
+        if not should_run or not hasattr(model_management, name):
+            return
+        cleanup_fn = getattr(model_management, name)
+        try:
+            cleanup_fn()
+        except Exception as exc:
+            warnings.warn(
+                f"ComfyUI cleanup hook {name} failed during teardown: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+    should_unload = unload_models
+    if should_unload is None:
+        should_unload = os.environ.get(
+            "COMFYUI_TOPYTHON_UNLOAD_MODELS", ""
+        ).lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+    try:
+        import comfy.model_management as model_management
+    except ModuleNotFoundError:
+        gc.collect()
+        return
+
+    run_cleanup_hook("cleanup_models_gc")
+    run_cleanup_hook("unload_all_models", should_run=should_unload)
+    run_cleanup_hook("soft_empty_cache")
+    gc.collect()
+
+
 # Workflow data
 def build_workflow() -> dict[str, Any]:
     return {
@@ -163,7 +203,7 @@ extra_pnginfo = build_extra_pnginfo()
 
 
 # Workflow execution
-def main():
+def main(unload_models: bool | None = None):
     bootstrap_comfyui_runtime()
     add_extra_model_paths()
 
@@ -180,51 +220,54 @@ def main():
 
     import torch
 
-    with torch.inference_mode():
-        checkpointloadersimple = CheckpointLoaderSimple()
-        checkpointloadersimple_1 = checkpointloadersimple.load_checkpoint(
-            ckpt_name="v1-5-pruned-emaonly-fp16.safetensors"
-        )
-        cliptextencode = CLIPTextEncode()
-        cliptextencode_2 = cliptextencode.encode(
-            text="a small cottage in a meadow, soft daylight",
-            clip=get_value_at_index(checkpointloadersimple_1, 1),
-        )
-        cliptextencode_3 = cliptextencode.encode(
-            text="blurry, low quality",
-            clip=get_value_at_index(checkpointloadersimple_1, 1),
-        )
-        emptylatentimage = EmptyLatentImage()
-        emptylatentimage_4 = emptylatentimage.generate(
-            width=512, height=512, batch_size=1
-        )
-        ksampler = KSampler()
-        vaedecode = VAEDecode()
-        saveimage = SaveImage()
-        for q in range(1):
-            node_5_seed = prompt["5"]["inputs"]["seed"] = random.randint(1, 2**64)
-            ksampler_5 = ksampler.sample(
-                seed=node_5_seed,
-                steps=4,
-                cfg=7,
-                sampler_name="euler",
-                scheduler="normal",
-                denoise=1,
-                model=get_value_at_index(checkpointloadersimple_1, 0),
-                positive=get_value_at_index(cliptextencode_2, 0),
-                negative=get_value_at_index(cliptextencode_3, 0),
-                latent_image=get_value_at_index(emptylatentimage_4, 0),
+    try:
+        with torch.inference_mode():
+            checkpointloadersimple = CheckpointLoaderSimple()
+            checkpointloadersimple_1 = checkpointloadersimple.load_checkpoint(
+                ckpt_name="v1-5-pruned-emaonly-fp16.safetensors"
             )
-            vaedecode_6 = vaedecode.decode(
-                samples=get_value_at_index(ksampler_5, 0),
-                vae=get_value_at_index(checkpointloadersimple_1, 2),
+            cliptextencode = CLIPTextEncode()
+            cliptextencode_2 = cliptextencode.encode(
+                text="a small cottage in a meadow, soft daylight",
+                clip=get_value_at_index(checkpointloadersimple_1, 1),
             )
-            saveimage_7 = saveimage.save_images(
-                filename_prefix="E2E_text_to_image",
-                images=get_value_at_index(vaedecode_6, 0),
-                prompt=prompt,
-                extra_pnginfo=extra_pnginfo,
+            cliptextencode_3 = cliptextencode.encode(
+                text="blurry, low quality",
+                clip=get_value_at_index(checkpointloadersimple_1, 1),
             )
+            emptylatentimage = EmptyLatentImage()
+            emptylatentimage_4 = emptylatentimage.generate(
+                width=512, height=512, batch_size=1
+            )
+            ksampler = KSampler()
+            vaedecode = VAEDecode()
+            saveimage = SaveImage()
+            for q in range(1):
+                node_5_seed = prompt["5"]["inputs"]["seed"] = random.randint(1, 2**64)
+                ksampler_5 = ksampler.sample(
+                    seed=node_5_seed,
+                    steps=4,
+                    cfg=7,
+                    sampler_name="euler",
+                    scheduler="normal",
+                    denoise=1,
+                    model=get_value_at_index(checkpointloadersimple_1, 0),
+                    positive=get_value_at_index(cliptextencode_2, 0),
+                    negative=get_value_at_index(cliptextencode_3, 0),
+                    latent_image=get_value_at_index(emptylatentimage_4, 0),
+                )
+                vaedecode_6 = vaedecode.decode(
+                    samples=get_value_at_index(ksampler_5, 0),
+                    vae=get_value_at_index(checkpointloadersimple_1, 2),
+                )
+                saveimage_7 = saveimage.save_images(
+                    filename_prefix="E2E_text_to_image",
+                    images=get_value_at_index(vaedecode_6, 0),
+                    prompt=prompt,
+                    extra_pnginfo=extra_pnginfo,
+                )
+    finally:
+        cleanup_comfyui_runtime(unload_models=unload_models)
 
 
 # Entrypoint

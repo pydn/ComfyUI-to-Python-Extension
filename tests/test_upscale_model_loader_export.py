@@ -145,20 +145,26 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
         generated = output.getvalue()
 
         self.assertIn("def bootstrap_comfyui_runtime()", generated)
+        self.assertIn("def cleanup_comfyui_runtime(", generated)
         self.assertIn("import comfy.options", generated)
         self.assertIn("comfy.options.enable_args_parsing()", generated)
         self.assertIn("import cuda_malloc", generated)
         self.assertNotIn("\nbootstrap_comfyui_runtime()\n", generated)
         self.assertIn(
-            "def main():\n    bootstrap_comfyui_runtime()\n    add_extra_model_paths()",
+            "def main(unload_models: bool | None = None):\n"
+            "    bootstrap_comfyui_runtime()\n"
+            "    add_extra_model_paths()",
             generated,
         )
         self.assertLess(
-            generated.index("def bootstrap_comfyui_runtime()"), generated.index("def main():")
+            generated.index("def bootstrap_comfyui_runtime()"),
+            generated.index("def main(unload_models: bool | None = None):"),
         )
-        main_section = generated[generated.index("def main():") :]
+        main_section = generated[
+            generated.index("def main(unload_models: bool | None = None):") :
+        ]
         self.assertIn(
-            "def main():\n"
+            "def main(unload_models: bool | None = None):\n"
             "    bootstrap_comfyui_runtime()\n"
             "    add_extra_model_paths()",
             main_section,
@@ -172,6 +178,10 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
             main_section.index("import torch"),
         )
         self.assertLess(generated.index("import cuda_malloc"), generated.index("import torch"))
+        self.assertIn(
+            "    finally:\n        cleanup_comfyui_runtime(unload_models=unload_models)",
+            main_section,
+        )
 
     def test_generated_module_import_does_not_parse_cli_args(self):
         workflow = {
@@ -431,18 +441,20 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
         self.assertIn("# Entrypoint", generated)
         self.assertIn("def build_workflow()", generated)
         self.assertIn("def build_extra_pnginfo()", generated)
-        self.assertIn("def main()", generated)
+        self.assertIn("def main(unload_models: bool | None = None)", generated)
         self.assertIn("bootstrap_comfyui_runtime()", generated)
+        self.assertIn("cleanup_comfyui_runtime(unload_models=unload_models)", generated)
         self.assertNotIn("def initialize_workflow()", generated)
         self.assertNotIn("def run_once(", generated)
         self.assertIn("with torch.inference_mode():", generated)
+        self.assertIn("finally:", generated)
         self.assertIn("for q in range(1):", generated)
         self.assertIn("workflow = build_workflow()", generated)
         self.assertIn("extra_pnginfo = build_extra_pnginfo()", generated)
         self.assertNotIn('workflow = json.loads("', generated)
         self.assertLess(
             generated.index("def build_workflow()"),
-            generated.index("def main()"),
+            generated.index("def main(unload_models: bool | None = None)"),
         )
 
     def test_hidden_metadata_kwargs_follow_function_signature(self):

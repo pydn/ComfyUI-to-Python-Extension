@@ -105,6 +105,36 @@ def bootstrap_comfyui_runtime() -> None:
         os.environ["OCL_SET_SVM_SIZE"] = "262144"
 
 
+def cleanup_comfyui_runtime(unload_models: bool | None = None) -> None:
+    """Best-effort cleanup for embedded or repeated generated-script execution."""
+    import gc
+
+    should_unload = unload_models
+    if should_unload is None:
+        should_unload = os.environ.get(
+            "COMFYUI_TOPYTHON_UNLOAD_MODELS", ""
+        ).lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+    try:
+        import comfy.model_management as model_management
+    except ModuleNotFoundError:
+        gc.collect()
+        return
+
+    if hasattr(model_management, "cleanup_models_gc"):
+        model_management.cleanup_models_gc()
+    if should_unload and hasattr(model_management, "unload_all_models"):
+        model_management.unload_all_models()
+    if hasattr(model_management, "soft_empty_cache"):
+        model_management.soft_empty_cache()
+    gc.collect()
+
+
 def import_custom_nodes() -> None:
     """Initialize ComfyUI custom nodes in the exporter runtime."""
     comfyui_path = get_comfyui_path()
@@ -160,7 +190,7 @@ extra_pnginfo = build_extra_pnginfo()
 
 
 # Workflow execution
-def main():
+def main(unload_models: bool | None = None):
     bootstrap_comfyui_runtime()
     add_extra_model_paths()
     import_custom_nodes()
@@ -170,26 +200,29 @@ def main():
 
     import torch
 
-    with torch.inference_mode():
-        loadimage = LoadImage()
-        loadimage_1 = loadimage.load_image(image="e2e_upscale_input.png")
-        upscalemodelloader = NODE_CLASS_MAPPINGS["UpscaleModelLoader"]()
-        upscalemodelloader_2 = upscalemodelloader.EXECUTE_NORMALIZED(
-            model_name="RealESRGAN_x4plus.safetensors"
-        )
-        imageupscalewithmodel = NODE_CLASS_MAPPINGS["ImageUpscaleWithModel"]()
-        saveimage = SaveImage()
-        for q in range(1):
-            imageupscalewithmodel_3 = imageupscalewithmodel.EXECUTE_NORMALIZED(
-                upscale_model=get_value_at_index(upscalemodelloader_2, 0),
-                image=get_value_at_index(loadimage_1, 0),
+    try:
+        with torch.inference_mode():
+            loadimage = LoadImage()
+            loadimage_1 = loadimage.load_image(image="e2e_upscale_input.png")
+            upscalemodelloader = NODE_CLASS_MAPPINGS["UpscaleModelLoader"]()
+            upscalemodelloader_2 = upscalemodelloader.EXECUTE_NORMALIZED(
+                model_name="RealESRGAN_x4plus.safetensors"
             )
-            saveimage_4 = saveimage.save_images(
-                filename_prefix="E2E_upscale_model_loader",
-                images=get_value_at_index(imageupscalewithmodel_3, 0),
-                prompt=prompt,
-                extra_pnginfo=extra_pnginfo,
-            )
+            imageupscalewithmodel = NODE_CLASS_MAPPINGS["ImageUpscaleWithModel"]()
+            saveimage = SaveImage()
+            for q in range(1):
+                imageupscalewithmodel_3 = imageupscalewithmodel.EXECUTE_NORMALIZED(
+                    upscale_model=get_value_at_index(upscalemodelloader_2, 0),
+                    image=get_value_at_index(loadimage_1, 0),
+                )
+                saveimage_4 = saveimage.save_images(
+                    filename_prefix="E2E_upscale_model_loader",
+                    images=get_value_at_index(imageupscalewithmodel_3, 0),
+                    prompt=prompt,
+                    extra_pnginfo=extra_pnginfo,
+                )
+    finally:
+        cleanup_comfyui_runtime(unload_models=unload_models)
 
 
 # Entrypoint

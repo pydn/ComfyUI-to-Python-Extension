@@ -1,5 +1,6 @@
 import os
 import sys
+import warnings
 from typing import Any, Mapping, Sequence, Union
 
 
@@ -92,6 +93,44 @@ def bootstrap_comfyui_runtime() -> None:
 
     if "rocm" in cuda_malloc.get_torch_version_noimport():
         os.environ["OCL_SET_SVM_SIZE"] = "262144"
+
+
+def cleanup_comfyui_runtime(unload_models: bool | None = None) -> None:
+    """Best-effort cleanup for embedded or repeated generated-script execution."""
+    import gc
+
+    def run_cleanup_hook(name: str, should_run: bool = True) -> None:
+        if not should_run or not hasattr(model_management, name):
+            return
+        cleanup_fn = getattr(model_management, name)
+        try:
+            cleanup_fn()
+        except Exception as exc:
+            warnings.warn(
+                f"ComfyUI cleanup hook {name} failed during teardown: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+    should_unload = unload_models
+    if should_unload is None:
+        should_unload = os.environ.get("COMFYUI_TOPYTHON_UNLOAD_MODELS", "").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
+    try:
+        import comfy.model_management as model_management
+    except ModuleNotFoundError:
+        gc.collect()
+        return
+
+    run_cleanup_hook("cleanup_models_gc")
+    run_cleanup_hook("unload_all_models", should_run=should_unload)
+    run_cleanup_hook("soft_empty_cache")
+    gc.collect()
 
 
 def import_custom_nodes() -> None:
