@@ -19,17 +19,14 @@ This project supports Python 3.12 and newer.
 
 For ComfyUI to recognize this project as an extension, the repo must be discoverable through ComfyUI's `custom_nodes` search paths.
 
-Use one of these setups:
+Clone directly into `ComfyUI/custom_nodes`:
 
-1. Clone directly into `ComfyUI/custom_nodes`
 ```bash
 cd /path/to/ComfyUI/custom_nodes
 git clone https://github.com/pydn/ComfyUI-to-Python-Extension.git
-cd ComfyUI-to-Python-Extension
-uv sync
 ```
 
-2. Keep the repo elsewhere, then either:
+Or keep the repo elsewhere, then either:
 - symlink it into `ComfyUI/custom_nodes`
 - add its parent directory to ComfyUI's `custom_nodes` search paths via `extra_model_paths.yaml`
 
@@ -38,9 +35,28 @@ Example symlink setup:
 git clone https://github.com/pydn/ComfyUI-to-Python-Extension.git
 cd /path/to/ComfyUI/custom_nodes
 ln -s /path/to/ComfyUI-to-Python-Extension ComfyUI-to-Python-Extension
-cd /path/to/ComfyUI-to-Python-Extension
-uv sync
 ```
+
+Then install this extension into the same Python environment that launches ComfyUI.
+The `pyproject.toml` file declares the package dependencies, but those dependencies still need to be installed into ComfyUI's runtime Python.
+
+If you run ComfyUI from a source checkout with `uv`:
+
+```bash
+cd /path/to/ComfyUI
+uv pip install -e ./custom_nodes/ComfyUI-to-Python-Extension
+uv run python main.py
+```
+
+If you use the Windows portable build:
+
+```
+cd C:\path\to\ComfyUI_windows_portable\ComfyUI\custom_nodes\ComfyUI-to-Python-Extension
+..\..\..\python_embeded\python.exe -m pip install -e .
+```
+
+Running `uv sync` inside `ComfyUI-to-Python-Extension` creates this extension's own `.venv`.
+ComfyUI does not automatically import dependencies from that `.venv`; it imports custom nodes with the Python interpreter used to launch ComfyUI.
 
 After installation, restart ComfyUI.
 
@@ -56,8 +72,17 @@ export COMFYUI_PATH=/path/to/ComfyUI
 ```
 
 `COMFYUI_PATH` helps the exporter and generated scripts find the ComfyUI codebase. It does not, by itself, register this repo as a ComfyUI extension for the Web UI.
+It also does not install ComfyUI runtime dependencies such as `torch` into the current Python environment.
 
 `COMFYUI_PATH` is checked first. If it is not set, the exporter falls back to searching parent directories for a folder named `ComfyUI`.
+
+If the CLI fails with `ModuleNotFoundError: No module named 'torch'`, run the command with the same Python environment that launches ComfyUI, or install ComfyUI's runtime dependencies into the environment you are using for the CLI.
+
+For Windows portable builds, run the CLI with ComfyUI's embedded Python from the extension directory:
+
+```
+..\..\..\python_embeded\python.exe -m comfyui_to_python --input_file ".\workflow_api.json" --output_file ".\workflow_api.py"
+```
 
 ## Web UI Export
 
@@ -131,7 +156,13 @@ Lifecycle notes:
 ## Troubleshooting
 
 - unsupported Python version:
-  use Python 3.12 or newer, then rerun `uv sync`
+  use Python 3.12 or newer in the environment that runs the extension, then reinstall the extension dependencies there
+- Web UI import fails after `uv sync`:
+  `uv sync` in this repo installs dependencies into this repo's `.venv`, but ComfyUI loads custom nodes with its own Python environment. Install the extension into the Python interpreter that launches ComfyUI.
+- Windows portable import fails after `uv sync`:
+  ComfyUI portable uses its bundled `python_embeded` interpreter. From the extension directory, run `..\..\..\python_embeded\python.exe -m pip install -e .`, then restart ComfyUI.
+- CLI fails with `No module named 'torch'`:
+  the extension `.venv` may not have ComfyUI's runtime dependencies. Either run the CLI from the Python environment that launches ComfyUI, or make sure the target ComfyUI environment is installed and `COMFYUI_PATH` points to it.
 - `Save As Script` not visible:
   check your current ComfyUI menu/frontend version and look under `File`
 - `Save As Script` not visible after restart:
