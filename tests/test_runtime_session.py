@@ -5,6 +5,17 @@ from unittest.mock import MagicMock, patch, call
 from comfyui_to_python.runtime_session import WorkflowSessionRuntime
 
 
+class StubNode:
+    FUNCTION = "execute"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"value": ("STRING",)}}
+
+    def execute(self, value):
+        return (f"result:{value}",)
+
+
 class TestWorkflowSessionRuntimeInit(unittest.TestCase):
     """Tests for WorkflowSessionRuntime initialization."""
 
@@ -100,22 +111,6 @@ class TestWorkflowSessionRuntimeLifecycle(unittest.TestCase):
             self.assertEqual(mock_do_close.call_count, 1)
 
 
-class TestWorkflowSessionRuntimeRunCount(unittest.TestCase):
-    """Tests for run count tracking."""
-
-    def _make_runtime(self):
-        return WorkflowSessionRuntime()
-
-    @patch("comfyui_to_python.runtime_session.WorkflowSessionRuntime._do_run")
-    def test_run_increments_run_count(self, mock_do_run):
-        runtime = self._make_runtime()
-        mock_do_run.return_value = {"result": [1]}
-        runtime.run()
-        self.assertEqual(runtime.run_count, 1)
-        runtime.run()
-        self.assertEqual(runtime.run_count, 2)
-
-
 class TestWorkflowSessionRuntimeExceptionSafety(unittest.TestCase):
     """Tests that exceptions during run() do not corrupt session state."""
 
@@ -123,21 +118,14 @@ class TestWorkflowSessionRuntimeExceptionSafety(unittest.TestCase):
         return WorkflowSessionRuntime()
 
     @patch("comfyui_to_python.runtime_session.WorkflowSessionRuntime._do_run")
-    def test_exception_does_not_clear_bootstrapped(self, mock_do_run):
+    def test_exception_preserves_state_flags(self, mock_do_run):
         runtime = self._make_runtime()
         runtime.bootstrapped = True
-        mock_do_run.side_effect = RuntimeError("simulated failure")
-        with self.assertRaises(RuntimeError):
-            runtime.run()
-        self.assertTrue(runtime.bootstrapped)
-
-    @patch("comfyui_to_python.runtime_session.WorkflowSessionRuntime._do_run")
-    def test_exception_preserves_custom_nodes_initialized(self, mock_do_run):
-        runtime = self._make_runtime()
         runtime.custom_nodes_initialized = True
         mock_do_run.side_effect = RuntimeError("simulated failure")
         with self.assertRaises(RuntimeError):
             runtime.run()
+        self.assertTrue(runtime.bootstrapped)
         self.assertTrue(runtime.custom_nodes_initialized)
 
     @patch("comfyui_to_python.runtime_session.WorkflowSessionRuntime._do_run")
@@ -147,6 +135,44 @@ class TestWorkflowSessionRuntimeExceptionSafety(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             runtime.run()
         self.assertEqual(runtime.run_count, 0)
+
+    def test_run_count_increments_after_successful_run(self):
+        runtime = self._make_runtime()
+        workflow_data = {
+            "1": {
+                "class_type": "StubNode",
+                "inputs": {"value": "test"},
+            }
+        }
+        node_mappings = {"StubNode": StubNode}
+        runtime._workflow_data = workflow_data
+        runtime._node_class_mappings = node_mappings
+        runtime.node_instances = {"StubNode": StubNode()}
+        runtime._node_classes = {"StubNode": StubNode}
+
+        runtime.run()
+
+        self.assertEqual(runtime.run_count, 1)
+
+    def test_run_count_resets_after_reset_every_n_runs(self):
+        runtime = WorkflowSessionRuntime(reset_every_n_runs=2)
+        workflow_data = {
+            "1": {
+                "class_type": "StubNode",
+                "inputs": {"value": "test"},
+            }
+        }
+        node_mappings = {"StubNode": StubNode}
+        runtime._workflow_data = workflow_data
+        runtime._node_class_mappings = node_mappings
+
+        runtime.run()
+        self.assertEqual(runtime.run_count, 1)
+        runtime.run()
+        self.assertEqual(runtime.run_count, 0)
+        self.assertFalse(runtime.bootstrapped)
+        self.assertFalse(runtime.custom_nodes_initialized)
+        self.assertEqual(runtime.node_instances, {})
 
 
 class TestWorkflowSessionRuntimeAlreadyClosed(unittest.TestCase):
@@ -168,24 +194,41 @@ class TestWorkflowSessionRuntimeNodeInstances(unittest.TestCase):
     def _make_runtime(self):
         return WorkflowSessionRuntime()
 
-    def test_ensure_node_instances_caches_instances(self):
+    def test_ensure_node_instances_creates_and_caches_instances(self):
         runtime = self._make_runtime()
         node_class = MagicMock()
         runtime._ensure_node_instances({"TestNode": node_class})
+        node_class.assert_called_once()
         self.assertIn("TestNode", runtime.node_instances)
-
-    def test_ensure_node_instances_creates_instance(self):
-        runtime = self._make_runtime()
-        node_class = MagicMock()
         runtime._ensure_node_instances({"TestNode": node_class})
         node_class.assert_called_once()
 
-    def test_ensure_node_instances_reuses_cached(self):
-        runtime = self._make_runtime()
-        node_class = MagicMock()
-        runtime._ensure_node_instances({"TestNode": node_class})
-        runtime._ensure_node_instances({"TestNode": node_class})
-        node_class.assert_called_once()
+    def test_node_instances_are_cached_across_runs(self):
+        runtime = WorkflowSessionRuntime()
+        workflow_data = {
+            "1": {
+                "class_type": "StubNode",
+                "inputs": {"value": "test"},
+            }
+        }
+        original_stub_init = StubNode.__init__
+        init_calls = []
+
+        def tracking_init(self, *args, **kwargs):
+            init_calls.append(1)
+            original_stub_init(self)
+
+        StubNode.__init__ = tracking_init
+        try:
+            runtime._workflow_data = workflow_data
+            runtime._node_class_mappings = {"StubNode": StubNode}
+
+            runtime.run()
+            runtime.run()
+
+            self.assertEqual(len(init_calls), 1)
+        finally:
+            StubNode.__init__ = original_stub_init
 
 
 class TestWorkflowSessionRuntimeClearRuntimeCache(unittest.TestCase):
@@ -225,17 +268,201 @@ class TestWorkflowSessionRuntimeDoClose(unittest.TestCase):
 
     @patch("comfyui_to_python.runtime_session.cleanup_comfyui_runtime")
     @patch("comfyui_to_python.runtime_session.gc")
-    def test_do_close_calls_cleanup_with_unload(self, mock_gc, mock_cleanup):
+    def test_do_close_calls_cleanup_and_gc(self, mock_gc, mock_cleanup):
         runtime = self._make_runtime()
         runtime._do_close(unload_models=True)
         mock_cleanup.assert_called_once_with(unload_models=True)
+        mock_gc.collect.assert_called_once()
 
-    @patch("comfyui_to_python.runtime_session.cleanup_comfyui_runtime")
-    @patch("comfyui_to_python.runtime_session.gc")
-    def test_do_close_calls_cleanup_without_unload(self, mock_gc, mock_cleanup):
+        mock_cleanup.reset_mock()
+        mock_gc.reset_mock()
         runtime = self._make_runtime()
         runtime._do_close(unload_models=False)
         mock_cleanup.assert_called_once_with(unload_models=False)
+        mock_gc.collect.assert_called_once()
+
+
+class TestWorkflowSessionRuntimeRun(unittest.TestCase):
+    """Tests for WorkflowSessionRuntime.run() workflow execution."""
+
+    def _make_runtime(self):
+        return WorkflowSessionRuntime()
+
+    def test_run_executes_workflow_nodes(self):
+        runtime = self._make_runtime()
+        workflow_data = {
+            "1": {
+                "class_type": "StubNode",
+                "inputs": {"value": "test"},
+            }
+        }
+        node_mappings = {"StubNode": StubNode}
+        runtime._workflow_data = workflow_data
+        runtime._node_class_mappings = node_mappings
+        runtime.node_instances = {"StubNode": StubNode()}
+        runtime._node_classes = {"StubNode": StubNode}
+
+        result = runtime.run()
+
+        self.assertIn("1", result)
+        self.assertEqual(result["1"], ["result:test"])
+
+    @patch(
+        "comfyui_to_python.runtime_session.WorkflowSessionRuntime._ensure_node_instances"
+    )
+    def test_run_with_no_workflow_data_returns_none(self, mock_ensure):
+        runtime = self._make_runtime()
+        result = runtime.run()
+        self.assertIsNone(result)
+
+    @patch(
+        "comfyui_to_python.runtime_session.WorkflowSessionRuntime._ensure_node_instances"
+    )
+    def test_run_with_no_node_mappings_returns_none(self, mock_ensure):
+        runtime = self._make_runtime()
+        runtime._workflow_data = {"1": {"class_type": "Test", "inputs": {}}}
+        result = runtime.run()
+        self.assertIsNone(result)
+
+    @patch(
+        "comfyui_to_python.runtime_session.WorkflowSessionRuntime._ensure_node_instances"
+    )
+    def test_run_node_not_in_mappings_is_skipped(self, mock_ensure):
+        workflow_data = {
+            "1": {
+                "class_type": "UnknownNode",
+                "inputs": {"value": "test"},
+            }
+        }
+        node_mappings = {"StubNode": StubNode}
+        runtime = self._make_runtime()
+        runtime._workflow_data = workflow_data
+        runtime._node_class_mappings = node_mappings
+
+        result = runtime.run()
+
+        self.assertEqual(result, {})
+
+    def test_run_node_returns_tuple_is_converted_to_list(self):
+        runtime = self._make_runtime()
+        workflow_data = {
+            "1": {
+                "class_type": "StubNode",
+                "inputs": {"value": "multi"},
+            }
+        }
+        node_mappings = {"StubNode": StubNode}
+        runtime._workflow_data = workflow_data
+        runtime._node_class_mappings = node_mappings
+        runtime.node_instances = {"StubNode": StubNode()}
+        runtime._node_classes = {"StubNode": StubNode}
+
+        result = runtime.run()
+
+        self.assertIsInstance(result["1"], list)
+        self.assertEqual(result["1"][0], "result:multi")
+
+    def test_run_persists_parameters_across_calls(self):
+        runtime = self._make_runtime()
+        workflow_data = {
+            "1": {
+                "class_type": "StubNode",
+                "inputs": {"value": "persist"},
+            }
+        }
+        node_mappings = {"StubNode": StubNode}
+
+        with patch.object(
+            runtime, "_do_run", return_value={"1": ["result:persist"]}
+        ) as mock_do_run:
+            runtime.run(
+                workflow_data=workflow_data, node_class_mappings=node_mappings
+            )
+            runtime.run()
+
+        self.assertEqual(mock_do_run.call_count, 2)
+
+    def test_run_does_not_corrupt_session_on_exception(self):
+        runtime = self._make_runtime()
+        workflow_data = {
+            "1": {
+                "class_type": "StubNode",
+                "inputs": {"value": "test"},
+            }
+        }
+        node_mappings = {"StubNode": StubNode}
+        runtime._workflow_data = workflow_data
+        runtime._node_class_mappings = node_mappings
+        mock_instance = MagicMock()
+        mock_instance.execute.side_effect = ValueError("boom")
+        runtime.node_instances = {"StubNode": mock_instance}
+        runtime._node_classes = {"StubNode": StubNode}
+
+        with self.assertRaises(ValueError):
+            runtime.run()
+
+        runtime.node_instances = {"StubNode": StubNode()}
+        runtime._node_classes = {"StubNode": StubNode}
+        result = runtime.run()
+        self.assertEqual(result["1"], ["result:test"])
+
+    @patch(
+        "comfyui_to_python.runtime_session.WorkflowSessionRuntime._ensure_node_instances"
+    )
+    def test_session_policy_does_not_clear_cache(self, mock_ensure):
+        runtime = WorkflowSessionRuntime(cleanup_policy="session")
+        workflow_data = {
+            "1": {
+                "class_type": "StubNode",
+                "inputs": {"value": "test"},
+            }
+        }
+        node_mappings = {"StubNode": StubNode}
+        runtime._workflow_data = workflow_data
+        runtime._node_class_mappings = node_mappings
+
+        with patch.object(runtime, "clear_runtime_cache") as mock_clear:
+            runtime.run()
+            mock_clear.assert_not_called()
+
+    @patch(
+        "comfyui_to_python.runtime_session.WorkflowSessionRuntime._ensure_node_instances"
+    )
+    def test_per_run_policy_clears_cache_after_each_run(self, mock_ensure):
+        runtime = WorkflowSessionRuntime(cleanup_policy="per_run")
+        workflow_data = {
+            "1": {
+                "class_type": "StubNode",
+                "inputs": {"value": "test"},
+            }
+        }
+        node_mappings = {"StubNode": StubNode}
+        runtime._workflow_data = workflow_data
+        runtime._node_class_mappings = node_mappings
+
+        with patch.object(runtime, "clear_runtime_cache") as mock_clear:
+            runtime.run()
+            mock_clear.assert_called_once()
+
+    @patch(
+        "comfyui_to_python.runtime_session.WorkflowSessionRuntime._ensure_node_instances"
+    )
+    def test_manual_policy_never_clears_cache(self, mock_ensure):
+        runtime = WorkflowSessionRuntime(cleanup_policy="manual")
+        workflow_data = {
+            "1": {
+                "class_type": "StubNode",
+                "inputs": {"value": "test"},
+            }
+        }
+        node_mappings = {"StubNode": StubNode}
+        runtime._workflow_data = workflow_data
+        runtime._node_class_mappings = node_mappings
+
+        with patch.object(runtime, "clear_runtime_cache") as mock_clear:
+            runtime.run()
+            runtime.run()
+            mock_clear.assert_not_called()
 
 
 if __name__ == "__main__":
