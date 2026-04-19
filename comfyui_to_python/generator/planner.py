@@ -37,6 +37,7 @@ class WorkflowPlanner:
         workflow_data: dict,
         metadata_workflow_data: dict | None = None,
         queue_size: int = 10,
+        execution_mode: str = "oneshot",
     ) -> GenerationPlan:
         import_statements = {"nodes": {"NODE_CLASS_MAPPINGS"}}
         executed_variables = {}
@@ -132,6 +133,8 @@ class WorkflowPlanner:
             metadata_workflow_data=metadata_workflow_data,
             queue_size=queue_size,
             custom_nodes=custom_nodes,
+            execution_mode=execution_mode,
+            executed_variables=executed_variables,
         )
 
     def create_function_call_code(

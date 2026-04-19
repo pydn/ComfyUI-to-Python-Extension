@@ -3,6 +3,7 @@ from typing import TextIO
 from .app import ExportApplication
 from .cli import DEFAULT_INPUT_FILE, DEFAULT_OUTPUT_FILE, DEFAULT_QUEUE_SIZE, main
 from .node_runtime import get_node_class_mappings, import_custom_nodes
+from .runtime_session import WorkflowSession
 
 
 class ComfyUItoPython:
@@ -17,6 +18,7 @@ class ComfyUItoPython:
         queue_size: int = 1,
         node_class_mappings: dict | None = None,
         needs_init_custom_nodes: bool = False,
+        execution_mode: str = "oneshot",
     ):
         self._app = ExportApplication(
             workflow=workflow,
@@ -26,6 +28,7 @@ class ComfyUItoPython:
             queue_size=queue_size,
             node_class_mappings=node_class_mappings,
             needs_init_custom_nodes=needs_init_custom_nodes,
+            execution_mode=execution_mode,
             node_mapping_loader=get_node_class_mappings,
             custom_node_importer=import_custom_nodes,
         )
@@ -48,6 +51,7 @@ def run(
 
 __all__ = [
     "ComfyUItoPython",
+    "WorkflowSession",
     "run",
     "main",
     "get_node_class_mappings",

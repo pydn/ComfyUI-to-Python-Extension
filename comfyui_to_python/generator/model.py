@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -10,3 +11,5 @@ class GenerationPlan:
     metadata_workflow_data: dict | None
     queue_size: int
     custom_nodes: bool
+    execution_mode: Literal["oneshot", "session"] = field(default="oneshot")
+    executed_variables: dict[str, str] = field(default_factory=dict)

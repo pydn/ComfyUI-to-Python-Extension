@@ -23,6 +23,7 @@ class ExportApplication:
         needs_init_custom_nodes: bool = False,
         node_mapping_loader=None,
         custom_node_importer=None,
+        execution_mode: str = "oneshot",
     ):
         if input_file and workflow:
             raise ValueError("Can't provide both input_file and workflow")
@@ -44,6 +45,7 @@ class ExportApplication:
             else self.node_mapping_loader()
         )
         self.needs_init_custom_nodes = needs_init_custom_nodes
+        self.execution_mode = execution_mode
         self.base_node_class_mappings = copy.deepcopy(self.node_class_mappings)
 
     def execute(self) -> None:
@@ -69,7 +71,8 @@ class ExportApplication:
             data,
             metadata_workflow_data,
             queue_size=self.queue_size,
+            execution_mode=self.execution_mode,
         )
-        generated_code = WorkflowRenderer().render(plan)
+        generated_code = WorkflowRenderer(execution_mode=self.execution_mode).render(plan)
         write_python_output(self.output_file, generated_code)
         print(f"Code successfully generated and written to {self.output_file}")
