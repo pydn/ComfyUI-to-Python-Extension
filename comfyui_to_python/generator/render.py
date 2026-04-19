@@ -58,11 +58,11 @@ class WorkflowRenderer:
             "import os",
             "import random",
             "import sys",
+            "import threading",
             "from typing import Sequence, Mapping, Any, Union",
         ] + func_strings
 
-        if plan.custom_nodes:
-            static_imports.append(f"\n{inspect.getsource(import_custom_nodes)}\n")
+        static_imports.append(f"\n{inspect.getsource(import_custom_nodes)}\n")
 
         return static_imports
 
@@ -182,6 +182,13 @@ class WorkflowRenderer:
         return black.format_str(final_code, mode=black.Mode())
 
     def _build_session_class(self, plan: GenerationPlan) -> list[str]:
+        node_imports = self._build_node_imports(plan.import_statements)
+        node_import_lines = []
+        if node_imports:
+            node_import_lines.append("")
+            node_import_lines.extend(f"            {line}" for line in node_imports)
+            node_import_lines.append("")
+
         lines = [
             "# WorkflowSession class",
             "class WorkflowSession:",
@@ -214,17 +221,31 @@ class WorkflowRenderer:
             "                self._bootstrapped = True",
             "                bootstrap_comfyui_runtime()",
             "",
-            "            if self._cleanup_policy == 'session' and not self._custom_nodes_initialized:",
-            "                self._custom_nodes_initialized = True",
-            "                import_custom_nodes()",
-            "",
-            "            prompt = json.loads(json.dumps(build_workflow()))",
-            "            extra_pnginfo = build_extra_pnginfo()",
-            "",
-            "            import torch",
-            "            try:",
-            "                with torch.inference_mode():",
         ]
+        lines.extend(
+            [
+                "            if not self._custom_nodes_initialized:",
+                "                self._custom_nodes_initialized = True",
+            ]
+        )
+        if plan.custom_nodes:
+            lines.append("                import_custom_nodes()")
+        lines.extend(
+            [
+                "",
+                "            prompt = json.loads(json.dumps(build_workflow()))",
+                "            extra_pnginfo = build_extra_pnginfo()",
+                "",
+            ]
+        )
+        lines.extend(node_import_lines)
+        lines.extend(
+            [
+                "            import torch",
+                "            try:",
+                "                with torch.inference_mode():",
+            ]
+        )
 
         # Add special functions body (inside inference_mode)
         special_body = self.build_function_body(
@@ -240,6 +261,26 @@ class WorkflowRenderer:
         )
         lines.extend(loop_body.splitlines())
 
+        # Build outputs collection: outputs = {node_id: var_name, ...}
+        # Inside try, after for loop (same level as for loop), so 16 spaces
+        executed_vars = plan.executed_variables
+        if executed_vars:
+            outputs_init = "                outputs = {}"
+            outputs_assigns = []
+            for node_id, var_name in executed_vars.items():
+                outputs_assigns.append(f"                outputs[{node_id!r}] = {var_name}")
+            run_increment = "                self._run_count += 1"
+            outputs_return = "                return outputs"
+            lines.append(outputs_init)
+            lines.extend(outputs_assigns)
+            lines.append(run_increment)
+            lines.append(outputs_return)
+        else:
+            run_increment = "                self._run_count += 1"
+            outputs_return = "                return None"
+            lines.append(run_increment)
+            lines.append(outputs_return)
+
         lines.extend(
             [
                 "            finally:",
@@ -249,39 +290,20 @@ class WorkflowRenderer:
             ]
         )
 
-        # Build outputs collection: outputs = {node_id: var_name, ...}
-        executed_vars = plan.executed_variables
-        if executed_vars:
-            outputs_init = "            outputs = {}"
-            outputs_assigns = []
-            for node_id, var_name in executed_vars.items():
-                outputs_assigns.append(f"            outputs[{node_id!r}] = {var_name}")
-            run_increment = "            self._run_count += 1"
-            outputs_return = "            return outputs"
-            lines.append(outputs_init)
-            lines.extend(outputs_assigns)
-            lines.append(run_increment)
-            lines.append(outputs_return)
-        else:
-            run_increment = "            self._run_count += 1"
-            outputs_return = "            return None"
-            lines.append(run_increment)
-            lines.append(outputs_return)
-
-        lines.extend(
-            [
-                "",
-                "    def close(self, unload_models: bool = True) -> None:",
-                '        """Close the session and optionally unload models."""',
-                "        with self._lock:",
-                "            if self._closed:",
-                "                return",
-                "            self._closed = True",
-                "            cleanup_comfyui_runtime(unload_models=unload_models)",
-                "            import gc",
-                "            gc.collect()",
-            ]
-        )
+        # close() method
+        lines.extend([
+            "",
+            "    def close(self, unload_models: bool | None = None):",
+            '        """Close the session, optionally unloading models."""',
+            "        with self._lock:",
+            "            if self._closed:",
+            "                return",
+            "            if self._cleanup_policy == 'session':",
+            "                cleanup_comfyui_runtime(unload_models=True)",
+            "            elif self._cleanup_policy == 'manual':",
+            "                self._bootstrapped = False",
+            "            self._closed = True",
+        ])
 
         return lines
 

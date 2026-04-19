@@ -320,6 +320,12 @@ def parse_args() -> argparse.Namespace:
         "--generated-path",
         help=argparse.SUPPRESS,
     )
+    parser.add_argument(
+        "--execution-mode",
+        default="oneshot",
+        choices=("oneshot", "session"),
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args()
     if not args.internal_export and not args.tier:
         parser.error("--tier is required unless --internal-export is used.")
@@ -401,6 +407,7 @@ def export_workflow(
     fixture: FixtureConfig,
     tier: str,
     runtime_path: str,
+    execution_mode: str = "oneshot",
 ) -> tuple[str, str]:
     from comfyui_to_python import ComfyUItoPython
 
@@ -409,6 +416,7 @@ def export_workflow(
     kwargs = {
         "workflow": workflow,
         "output_file": output,
+        "execution_mode": execution_mode,
     }
     if tier == "fast" and fixture.fast_mapping_factory is not None:
         kwargs["node_class_mappings"] = fixture.fast_mapping_factory()
@@ -477,6 +485,41 @@ def export_workflow_in_runtime_env(fixture: FixtureConfig, runtime_path: str) ->
             f"Runtime export failed for {fixture.name}: {output}",
         )
     return generated_path.read_text(encoding="utf-8")
+
+
+def export_session_workflow_in_runtime_env(
+    workflow_json: str,
+    execution_mode: str = "session",
+) -> str:
+    """Export a session workflow via subprocess in the ComfyUI runtime env.
+
+    Unlike ``export_workflow_in_runtime_env`` this does not require a fixture
+    config – it receives workflow JSON directly and re-enters the runtime
+    interpreter so ``ComfyUItoPython`` can import ComfyUI's nodes.
+    """
+    runtime_path = os.environ.get("COMFYUI_PATH", "")
+    runtime_python = get_runtime_python(runtime_path)
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".json", mode="w", delete=False, encoding="utf-8"
+    ) as wf:
+        wf.write(workflow_json)
+        wf_path = wf.name
+
+    try:
+        temp_fixture = FixtureConfig(
+            name="session-mode-export",
+            path=Path(wf_path),
+        )
+        _, generated = export_workflow(
+            fixture=temp_fixture,
+            tier="runtime",
+            runtime_path=runtime_path,
+            execution_mode=execution_mode,
+        )
+        return generated
+    finally:
+        os.unlink(wf_path)
 
 
 def validate_generated_python(generated_code: str, fixture_name: str) -> None:
@@ -671,8 +714,10 @@ def main() -> int:
             fixture=fixture,
             tier="runtime",
             runtime_path=os.environ.get("COMFYUI_PATH", ""),
+            execution_mode=args.execution_mode,
         )
         output_path.write_text(generated_code, encoding="utf-8")
+        print(generated_code, end="")
         return 0
 
     try:

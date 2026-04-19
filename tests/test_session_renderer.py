@@ -137,7 +137,7 @@ class SessionRendererTest(unittest.TestCase):
         )
 
         generated = output.getvalue()
-        self.assertIn("def close(self, unload_models: bool = True)", generated)
+        self.assertIn("def close(self, unload_models: bool | None = None)", generated)
 
     def test_session_mode_oneshot_generates_same_code(self):
         workflow = {
