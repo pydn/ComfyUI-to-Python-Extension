@@ -31,3 +31,35 @@ class ProjectContractsTest(unittest.TestCase):
         self.assertIn('const DEFAULT_SCRIPT_FILENAME = "workflow_api.py";', save_as_script)
         self.assertNotIn("prompt(", save_as_script)
 
+    def test_pip_install_e_works_with_explicit_package_config(self):
+        """`pip install -e .` must succeed — no 'Multiple top-level packages' error.
+
+        Setuptools auto-discovers every top-level directory.  Without explicit
+        `[tool.setuptools.packages.find]` the `js/` and `images/` asset dirs
+        cause the install to abort with
+        "Multiple top-level packages discovered in a flat-layout".
+        """
+        pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+
+        setuptools_cfg = pyproject.get("tool", {}).get("setuptools", {})
+        self.assertIn(
+            "packages",
+            setuptools_cfg,
+            "pyproject.toml must declare [tool.setuptools.packages] to avoid "
+            "setuptools discovering asset directories as packages during "
+            "`pip install -e .`",
+        )
+
+    def test_pip_install_e_deps_include_aiohttp(self):
+        """`aiohttp` is imported in `__init__.py` and must be a project dependency."""
+        pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        deps = pyproject["project"]["dependencies"]
+
+        dep_names = [d.split("=")[0].split(">")[0].split("<")[0].split("!")[0].strip().lower() for d in deps]
+
+        self.assertIn(
+            "aiohttp",
+            dep_names,
+            "aiohttp is imported in __init__.py and must be listed in project dependencies",
+        )
+

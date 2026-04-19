@@ -4,11 +4,14 @@ description = "This custom node allows you to generate pure python code from you
 version = "2.1.0"
 license = { text = "MIT License" }
 requires-python = ">=3.12"
-dependencies = ["black"]
+dependencies = ["black", "aiohttp"]
 
 [project.urls]
 Repository = "https://github.com/pydn/ComfyUI-to-Python-Extension"
 #  Used by Comfy Registry https://comfyregistry.org
+
+[tool.setuptools.packages.find]
+include = ["comfyui_to_python*"]
 
 [tool.comfy]
 PublisherId = "pydn"
