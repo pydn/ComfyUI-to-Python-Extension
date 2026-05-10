@@ -269,9 +269,6 @@ def get_value_at_index(obj: Union[Sequence, Mapping], index: int) -> Any:
         return obj["result"][index]
 
 
-import_custom_nodes()
-
-
 def import_custom_nodes() -> None:
     """Initialize ComfyUI custom nodes in the exporter runtime.
 

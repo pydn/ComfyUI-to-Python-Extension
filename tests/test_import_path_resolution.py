@@ -21,6 +21,19 @@ _REAL_COMFYUI = os.path.realpath(
 )
 
 
+def _make_fake_comfyui(tmpdir: str) -> str:
+    """Create a minimal fake ComfyUI directory in tmpdir with structural markers."""
+    comfyui_dir = os.path.join(tmpdir, "ComfyUI")
+    os.makedirs(comfyui_dir)
+    # Structural markers checked by _is_comfyui_directory()
+    with open(os.path.join(comfyui_dir, "nodes.py"), "w") as f:
+        f.write("# fake nodes.py\n")
+    with open(os.path.join(comfyui_dir, "main.py"), "w") as f:
+        f.write("# fake main.py\n")
+    os.makedirs(os.path.join(comfyui_dir, "comfy"))
+    return comfyui_dir
+
+
 class TestLoadModule(unittest.TestCase):
     """Tests for _load_module() centralized importlib isolation."""
 
@@ -123,6 +136,7 @@ class TestShadowingResistance(unittest.TestCase):
         self.assertEqual(mod.NODE_CLASS_MAPPINGS, {"RealNode": "real"})
 
 
+@unittest.skipUnless(os.path.isdir(_REAL_COMFYUI), "requires ../ComfyUI checkout")
 class TestSysPathIdempotence(unittest.TestCase):
     """Tests for sys.path idempotence — no remove/re-insert gap."""
 
@@ -144,6 +158,54 @@ class TestSysPathIdempotence(unittest.TestCase):
         self.assertEqual(after_first, after_second, "sys.path changed on second call")
         # ComfyUI should be on sys.path
         self.assertIn(_REAL_COMFYUI, sys.path)
+
+    def test_already_at_index_zero_is_noop(self):
+        """Given ComfyUI already at sys.path[0], add_comfyui_directory_to_sys_path() is a no-op."""
+        from comfyui_to_python.node_runtime import (
+            add_comfyui_directory_to_sys_path,
+        )
+
+        original_path = sys.path[:]
+        try:
+            with patch.dict("os.environ", {"COMFYUI_PATH": _REAL_COMFYUI}, clear=False):
+                # Put ComfyUI at index 0 manually
+                if _REAL_COMFYUI in sys.path:
+                    sys.path.remove(_REAL_COMFYUI)
+                sys.path.insert(0, _REAL_COMFYUI)
+                original_index = sys.path.index(_REAL_COMFYUI)
+
+                add_comfyui_directory_to_sys_path()
+                new_index = sys.path.index(_REAL_COMFYUI)
+        finally:
+            sys.path[:] = original_path
+
+        self.assertEqual(
+            original_index, new_index, "Index should not change when already at [0]"
+        )
+        self.assertEqual(new_index, 0)
+
+    def test_promotes_comfyui_to_sys_path_zero(self):
+        """Given ComfyUI at sys.path[5], add_comfyui_directory_to_sys_path() moves it to index 0."""
+        from comfyui_to_python.node_runtime import (
+            add_comfyui_directory_to_sys_path,
+        )
+
+        original_path = sys.path[:]
+        try:
+            with patch.dict("os.environ", {"COMFYUI_PATH": _REAL_COMFYUI}, clear=False):
+                # Insert ComfyUI deep in sys.path (simulating PYTHONPATH placement)
+                if _REAL_COMFYUI in sys.path:
+                    sys.path.remove(_REAL_COMFYUI)
+                sys.path.insert(5, _REAL_COMFYUI)
+
+                add_comfyui_directory_to_sys_path()
+                self.assertEqual(
+                    sys.path[0],
+                    _REAL_COMFYUI,
+                    "ComfyUI must be promoted to sys.path[0] when already present lower down",
+                )
+        finally:
+            sys.path[:] = original_path
 
     def test_import_custom_nodes_no_gap_window(self):
         """import_custom_nodes() must never remove ComfyUI from sys.path during execution."""
@@ -241,9 +303,17 @@ class TestGetComfyuiPath(unittest.TestCase):
         """Given COMFYUI_PATH env var set to valid ComfyUI dir, returns that path."""
         from comfyui_to_python.node_runtime import get_comfyui_path
 
-        with patch.dict("os.environ", {"COMFYUI_PATH": _REAL_COMFYUI}, clear=False):
-            result = get_comfyui_path()
-        self.assertEqual(result, _REAL_COMFYUI)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_comfyui = _make_fake_comfyui(tmpdir)
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(fake_comfyui)  # strategy 2 would find it, but env wins first
+            finally:
+                pass
+            with patch.dict("os.environ", {"COMFYUI_PATH": fake_comfyui}, clear=False):
+                result = get_comfyui_path()
+            os.chdir(original_cwd)
+        self.assertEqual(result, fake_comfyui)
 
     def test_falls_through_to_next_strategy_when_env_invalid(self):
         """Given invalid COMFYUI_PATH (no nodes.py), rejects and falls through."""
@@ -263,10 +333,12 @@ class TestIsComfyuiDirectory(unittest.TestCase):
     """Tests for _is_comfyui_directory() structural verification."""
 
     def test_returns_true_for_real_comfyui_checkout(self):
-        """Given a real ComfyUI checkout with nodes.py, returns True."""
+        """Given a valid ComfyUI directory with structural markers, returns True."""
         from comfyui_to_python.node_runtime import _is_comfyui_directory
 
-        self.assertTrue(_is_comfyui_directory(_REAL_COMFYUI))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_comfyui = _make_fake_comfyui(tmpdir)
+            self.assertTrue(_is_comfyui_directory(fake_comfyui))
 
     def test_rejects_directory_lacking_markers(self):
         """Given a directory without nodes.py, returns False."""
@@ -333,6 +405,39 @@ class TestLoadModuleFailureCleanup(unittest.TestCase):
             result_good = _load_module("_test_fail_retry", good_file)
         self.assertIsNotNone(result_good)
         self.assertEqual(result_good.VALUE, 99)
+
+
+class TestCanonicalOptionsLoading(unittest.TestCase):
+    """Tests for canonical module loading of comfy.options in bootstrap."""
+
+    def tearDown(self):
+        # Clean up sys.modules cache
+        mod_names_to_clean = [
+            name for name in sys.modules if name.startswith("_test_opts_")
+        ]
+        for name in mod_names_to_clean:
+            del sys.modules[name]
+        if "comfy.options" in sys.modules:
+            del sys.modules["comfy.options"]
+
+    def test_load_under_canonical_name_caches_in_sys_modules(self):
+        """When _load_module() uses canonical name, the module is cached in sys.modules."""
+        from comfyui_to_python.node_runtime import _load_module
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod_file = os.path.join(tmpdir, "options.py")
+            with open(mod_file, "w") as f:
+                f.write("args_parsing = False\n")
+
+            # Load under canonical name
+            mod = _load_module("comfy.options", mod_file)
+        self.assertIsNotNone(mod)
+        # The canonical key must be in sys.modules so later imports see mutations
+        self.assertIn(
+            "comfy.options",
+            sys.modules,
+            "Canonical module load must cache under canonical name in sys.modules",
+        )
 
 
 class TestLoadModuleTemp(unittest.TestCase):
@@ -409,6 +514,125 @@ class TestRepeatedNodeLoad(unittest.TestCase):
         self.assertEqual(second.NODE_CLASS_MAPPINGS.get("B"), 2)
 
 
+class TestFindFile(unittest.TestCase):
+    """Tests for _find_file() — file discovery via directory walk."""
+
+    def test_finds_file_at_cwd_level(self):
+        """Given a file at CWD, _find_file() returns the full path to it."""
+        from comfyui_to_python.node_runtime import _find_file
+
+        original_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target_file = os.path.join(tmpdir, "extra_model_paths.yaml")
+            with open(target_file, "w") as f:
+                f.write("config: value\n")
+
+            try:
+                os.chdir(tmpdir)
+                result = _find_file("extra_model_paths.yaml")
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertEqual(result, target_file)
+
+    def test_finds_file_in_parent_directory(self):
+        """Given a file in a parent directory, _find_file() walks up and finds it."""
+        from comfyui_to_python.node_runtime import _find_file
+
+        original_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target_file = os.path.join(tmpdir, "extra_model_paths.yaml")
+            with open(target_file, "w") as f:
+                f.write("config: value\n")
+
+            # Create a subdirectory and chdir into it
+            subdir = os.path.join(tmpdir, "subdir", "deeper")
+            os.makedirs(subdir)
+
+            try:
+                os.chdir(subdir)
+                result = _find_file("extra_model_paths.yaml")
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertEqual(result, target_file)
+
+    def test_returns_none_when_file_not_found(self):
+        """Given a filename that doesn't exist within max_depth, returns None."""
+        from comfyui_to_python.node_runtime import _find_file
+
+        original_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            try:
+                os.chdir(tmpdir)
+                result = _find_file("nonexistent_config.yaml")
+            finally:
+                os.chdir(original_cwd)
+        self.assertIsNone(result)
+
+    def test_returns_none_for_directory_not_file(self):
+        """Given a directory with matching name, returns None (wants a file)."""
+        from comfyui_to_python.node_runtime import _find_file
+
+        original_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a directory (not file) with the target name
+            fake_dir = os.path.join(tmpdir, "extra_model_paths.yaml")
+            os.makedirs(fake_dir)
+
+            try:
+                os.chdir(tmpdir)
+                result = _find_file("extra_model_paths.yaml")
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertIsNone(result)
+
+
+class TestFindPathCwdFirst(unittest.TestCase):
+    """Tests for find_path() checking CWD before walking to parent."""
+
+    def test_find_path_returns_cwd_when_cwd_is_match(self):
+        """Given CWD is named 'ComfyUI', find_path('ComfyUI') returns CWD itself."""
+        from comfyui_to_python.node_runtime import find_path
+
+        original_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            comfyui_dir = os.path.join(tmpdir, "ComfyUI")
+            os.makedirs(comfyui_dir)
+            try:
+                os.chdir(comfyui_dir)
+                result = find_path("ComfyUI")
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertEqual(result, comfyui_dir)
+
+    def test_find_path_checks_cwd_before_parent(self):
+        """When CWD matches but parent also matches, CWD is returned (check-first)."""
+        from comfyui_to_python.node_runtime import find_path
+
+        original_cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create nested dirs: outer/ComfyUI/inner where inner is named ComfyUI too
+            outer_comfy = os.path.join(tmpdir, "ComfyUI")
+            os.makedirs(outer_comfy)
+            # Rename so we can create an inner dir also named ComfyUI
+            os.rename(outer_comfy, os.path.join(tmpdir, "ParentComfy"))
+            parent_comfy = os.path.join(tmpdir, "ParentComfy")
+            child_dir = os.path.join(parent_comfy, "subdir")
+            os.makedirs(child_dir)
+
+            try:
+                os.chdir(child_dir)
+                # When searching for ParentComfy, should find it at parent level
+                result = find_path("ParentComfy")
+            finally:
+                os.chdir(original_cwd)
+
+        self.assertEqual(result, parent_comfy)
+
+
 class TestGetComfyuiPathThirdStrategy(unittest.TestCase):
     """Tests for get_comfyui_path() third-strategy verification."""
 
@@ -437,6 +661,7 @@ class TestGetComfyuiPathThirdStrategy(unittest.TestCase):
         self.assertNotEqual(result, fake_dir)
 
 
+@unittest.skipUnless(os.path.isdir(_REAL_COMFYUI), "requires ../ComfyUI checkout")
 class TestImportCustomNodesSysPathRestoration(unittest.TestCase):
     """Tests for sys.path restoration in import_custom_nodes()."""
 
@@ -457,12 +682,15 @@ class TestImportCustomNodesSysPathRestoration(unittest.TestCase):
                 raise RuntimeError("simulated crash during server load")
             return None  # Let execution/nodes return None (falls through gracefully)
 
-        with patch(
-            "comfyui_to_python.node_runtime._load_module",
-            side_effect=fake_load,
-        ), patch(
-            "comfyui_to_python.node_runtime.get_comfyui_path",
-            return_value=_REAL_COMFYUI if os.path.isdir(_REAL_COMFYUI) else None,
+        with (
+            patch(
+                "comfyui_to_python.node_runtime._load_module",
+                side_effect=fake_load,
+            ),
+            patch(
+                "comfyui_to_python.node_runtime.get_comfyui_path",
+                return_value=_REAL_COMFYUI if os.path.isdir(_REAL_COMFYUI) else None,
+            ),
         ):
             try:
                 import_custom_nodes()

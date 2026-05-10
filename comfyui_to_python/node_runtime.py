@@ -58,34 +58,58 @@ def _load_module(module_name: str, filepath: str) -> Any:
 
 
 def _find_from_extension_location() -> str | None:
-    """Walk up from this file's location to find ComfyUI root."""
+    """Walk up from this file's location to find ComfyUI root.
+
+    Checks the starting directory first before walking upward.
+    """
     ext_dir = os.path.dirname(os.path.realpath(__file__))
     candidate = ext_dir
     for _ in range(10):
+        if os.path.basename(candidate) == "ComfyUI":
+            if _is_comfyui_directory(candidate):
+                return candidate
         parent = os.path.dirname(candidate)
         if parent == candidate:
             break
         candidate = parent
-        if os.path.basename(candidate) == "ComfyUI":
-            if _is_comfyui_directory(candidate):
-                return candidate
+    return None
+
+
+def _find_file(name: str, max_depth: int = 20) -> str | None:
+    """Walk up from CWD to find a file by name.
+
+    Unlike find_path() which searches for directories, this checks
+    os.path.isfile() at each level. Returns full path to the file or None.
+
+    Checks CWD first before walking upward.
+    """
+    candidate = os.getcwd()
+    for _ in range(max_depth):
+        filepath = os.path.join(candidate, name)
+        if os.path.isfile(filepath):
+            return filepath
+        parent = os.path.dirname(candidate)
+        if parent == candidate:
+            break
+        candidate = parent
     return None
 
 
 def find_path(name: str, max_depth: int = 20) -> str | None:
     """Iteratively walk up from CWD to find a directory by name.
 
-    Depth-limited to prevent slow startup on deep trees.
-    Each candidate verified by _is_comfyui_directory() at the caller.
+    Checks CWD first before walking upward. Depth-limited to prevent slow
+    startup on deep trees. Each candidate verified by _is_comfyui_directory()
+    at the caller.
     """
     candidate = os.getcwd()
     for _ in range(max_depth):
+        if os.path.basename(candidate) == name:
+            return candidate
         parent = os.path.dirname(candidate)
         if parent == candidate:
             break
         candidate = parent
-        if os.path.basename(candidate) == name:
-            return candidate
     return None
 
 
@@ -110,12 +134,17 @@ def get_comfyui_path() -> str | None:
 
 
 def add_comfyui_directory_to_sys_path() -> None:
-    """Add the ComfyUI checkout to sys.path (idempotent — insert-once, no gap)."""
+    """Add the ComfyUI checkout to sys.path (idempotent — always at index 0).
+
+    If already present but lower in sys.path, removes and re-inserts at front
+    so bare imports always resolve to this copy first.
+    """
     comfyui_path = get_comfyui_path()
     if comfyui_path is not None and os.path.isdir(comfyui_path):
-        if comfyui_path not in sys.path:
-            sys.path.insert(0, comfyui_path)
-            log.debug("Added %s to sys.path", comfyui_path)
+        if comfyui_path in sys.path:
+            sys.path.remove(comfyui_path)
+        sys.path.insert(0, comfyui_path)
+        log.debug("Added %s to sys.path[0]", comfyui_path)
 
 
 def add_extra_model_paths() -> None:
@@ -141,7 +170,7 @@ def add_extra_model_paths() -> None:
             return
         load_extra_path_config = getattr(extra_config_mod, "load_extra_path_config")
 
-    extra_model_paths = find_path("extra_model_paths.yaml")
+    extra_model_paths = _find_file("extra_model_paths.yaml")
     if extra_model_paths is not None:
         load_extra_path_config(extra_model_paths)
     else:
@@ -167,20 +196,28 @@ def bootstrap_comfyui_runtime() -> None:
         log.debug("bootstrap_comfyui_runtime: ComfyUI path not found")
         return
 
-    # Use _load_module for file-based isolation, but with temporary names so
-    # the modules are removed from sys.modules after reading values.
-    # This prevents conflicts when ComfyUI's internal import chain (e.g.
-    # nodes.py -> comfy.cli_args) later loads these modules normally.
-    options_mod = _load_module_temp(
-        "_bootstrap_options", os.path.join(comfyui_path, "comfy", "options.py")
+    # Load comfy.options under its canonical name so that enable_args_parsing()
+    # mutates the sys.modules["comfy.options"] cache entry. When cli_args.py
+    # later imports comfy.options by canonical name, it sees the mutation.
+    options_mod = _load_module(
+        "comfy.options", os.path.join(comfyui_path, "comfy", "options.py")
     )
     if options_mod is not None:
         options_mod.enable_args_parsing()
 
-    cli_args_mod = _load_module_temp(
-        "_bootstrap_cli_args", os.path.join(comfyui_path, "comfy", "cli_args.py")
+    # cli_args imports comfy.options — so it must be cached under canonical name
+    # at this point. We remove both from sys.modules only after cli_args has
+    # loaded and consumed the args value, to prevent conflicts with later normal
+    # import chains (e.g. nodes.py -> comfy.cli_args).
+    cli_args_mod = _load_module(
+        "comfy.cli_args", os.path.join(comfyui_path, "comfy", "cli_args.py")
     )
+
     args = getattr(cli_args_mod, "args", None) if cli_args_mod else None
+
+    # Now safe to remove bootstrap copies — args value already captured.
+    sys.modules.pop("comfy.options", None)
+    sys.modules.pop("comfy.cli_args", None)
 
     if args is None:
         return
