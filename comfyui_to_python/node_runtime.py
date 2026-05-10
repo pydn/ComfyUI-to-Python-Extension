@@ -9,10 +9,18 @@ log = logging.getLogger(__name__)
 
 
 def _is_comfyui_directory(path: str) -> bool:
-    """Verify a directory has ComfyUI structural markers (nodes.py)."""
+    """Verify a directory has ComfyUI structural markers.
+
+    Checks for nodes.py, main.py, and the comfy/ subdirectory to raise
+    the bar against spoofing via a directory with only a single marker file.
+    """
     if not os.path.isdir(path):
         return False
-    return os.path.isfile(os.path.join(path, "nodes.py"))
+    return (
+        os.path.isfile(os.path.join(path, "nodes.py"))
+        and os.path.isfile(os.path.join(path, "main.py"))
+        and os.path.isdir(os.path.join(path, "comfy"))
+    )
 
 
 def _load_module(module_name: str, filepath: str) -> Any:
@@ -43,8 +51,9 @@ def _load_module(module_name: str, filepath: str) -> Any:
             sys.modules.pop(module_name, None)
             raise
         return mod
-    except Exception as e:
+    except BaseException as e:
         log.debug("Failed to load %s from %s: %s", module_name, filepath, e)
+        sys.modules.pop(module_name, None)  # Also clean up on edge-case exceptions
         return None
 
 

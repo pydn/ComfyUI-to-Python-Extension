@@ -65,7 +65,9 @@ class ExportApplication:
             if nodes_mod is not None:
                 fresh_mappings = getattr(nodes_mod, "NODE_CLASS_MAPPINGS", {})
                 self.node_class_mappings = fresh_mappings
-            self.base_node_class_mappings = copy.deepcopy(self.node_class_mappings)
+            # Leave self.base_node_class_mappings unchanged — it represents the
+            # pre-custom-node baseline used by WorkflowPlanner to decide whether
+            # a node gets a direct import or a NODE_CLASS_MAPPINGS dict lookup.
 
         load_order = LoadOrderDeterminer(
             data, self.node_class_mappings

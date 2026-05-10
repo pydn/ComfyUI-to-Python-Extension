@@ -441,19 +441,39 @@ class TestImportCustomNodesSysPathRestoration(unittest.TestCase):
     """Tests for sys.path restoration in import_custom_nodes()."""
 
     def test_sys_path_restored_on_crash(self):
-        """Given a crash during import_custom_nodes(), sys.path is still restored."""
+        """Given a crash during import_custom_nodes(), sys.path is still restored.
+
+        The crash fires on the "server" module load (after comfy/ filtering)
+        so that the try/finally sys.path restoration path is actually exercised.
+        """
         from comfyui_to_python.node_runtime import import_custom_nodes
 
         original_path = sys.path[:]
+        call_order = []
+
+        def fake_load(name, path):
+            call_order.append(name)
+            if name == "server":
+                raise RuntimeError("simulated crash during server load")
+            return None  # Let execution/nodes return None (falls through gracefully)
 
         with patch(
             "comfyui_to_python.node_runtime._load_module",
-            side_effect=RuntimeError("simulated crash during server load"),
+            side_effect=fake_load,
+        ), patch(
+            "comfyui_to_python.node_runtime.get_comfyui_path",
+            return_value=_REAL_COMFYUI if os.path.isdir(_REAL_COMFYUI) else None,
         ):
             try:
                 import_custom_nodes()
             except RuntimeError:
                 pass  # Expected crash
+
+        # When ComfyUI path is found, "execution" and "nodes" should be called
+        # before reaching the server module load inside try/finally.
+        self.assertIn("execution", call_order, "Expected 'execution' to be loaded")
+        self.assertIn("nodes", call_order, "Expected 'nodes' to be loaded")
+        self.assertIn("server", call_order, "Expected 'server' to trigger the crash")
 
         # sys.path should still contain all original entries (no dangling state)
         for entry in original_path:

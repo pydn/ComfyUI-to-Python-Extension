@@ -10,47 +10,6 @@ from typing import Sequence, Mapping, Any, Union
 log = logging.getLogger(__name__)
 
 
-def _load_module(module_name: str, filepath: str) -> Any:
-    """Load a Python module from an explicit file path, bypassing sys.path.
-
-    This eliminates ALL bare import shadowing attacks by loading modules
-    from verified file paths instead of relying on sys.path resolution.
-    """
-    if not os.path.isfile(filepath):
-        log.debug("Module file not found: %s (%s)", module_name, filepath)
-        return None
-    try:
-        spec = importlib.util.spec_from_file_location(module_name, filepath)
-        if spec is None or spec.loader is None:
-            log.debug("Could not create spec for %s at %s", module_name, filepath)
-            return None
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = mod
-        spec.loader.exec_module(mod)
-        return mod
-    except Exception as e:
-        log.debug("Failed to load %s from %s: %s", module_name, filepath, e)
-        return None
-
-
-def _load_module_temp(module_name: str, filepath: str) -> Any:
-    """Load a module via _load_module() then remove it from sys.modules.
-
-    Used during bootstrap for modules that ComfyUI's import chain also loads
-    normally — prevents the cached copy from conflicting with later imports.
-    """
-    mod = _load_module(module_name, filepath)
-    sys.modules.pop(module_name, None)
-    return mod
-
-
-def _is_comfyui_directory(path: str) -> bool:
-    """Verify a directory has ComfyUI structural markers (nodes.py)."""
-    if not os.path.isdir(path):
-        return False
-    return os.path.isfile(os.path.join(path, "nodes.py"))
-
-
 def _find_from_extension_location() -> str | None:
     """Walk up from this file's location to find ComfyUI root."""
     ext_dir = os.path.dirname(os.path.realpath(__file__))
@@ -66,46 +25,64 @@ def _find_from_extension_location() -> str | None:
     return None
 
 
-def get_value_at_index(obj: Union[Sequence, Mapping], index: int) -> Any:
-    """Return a sequence or mapping result item by index."""
+def _is_comfyui_directory(path: str) -> bool:
+    """Verify a directory has ComfyUI structural markers.
+
+    Checks for nodes.py, main.py, and the comfy/ subdirectory to raise
+    the bar against spoofing via a directory with only a single marker file.
+    """
+    if not os.path.isdir(path):
+        return False
+    return (
+        os.path.isfile(os.path.join(path, "nodes.py"))
+        and os.path.isfile(os.path.join(path, "main.py"))
+        and os.path.isdir(os.path.join(path, "comfy"))
+    )
+
+
+def _load_module(module_name: str, filepath: str) -> Any:
+    """Load a Python module from an explicit file path, bypassing sys.path.
+
+    Significantly reduces bare import shadowing risk by loading modules
+    from verified file paths instead of relying on sys.path resolution.
+    If exec_module() raises, the partially-loaded module is removed from
+    sys.modules so subsequent calls start fresh.
+    """
+    # Return cached module if already loaded — prevents re-execution
+    # that would reset state (e.g. NODE_CLASS_MAPPINGS after init_extra_nodes).
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    if not os.path.isfile(filepath):
+        log.debug("Module file not found: %s (%s)", module_name, filepath)
+        return None
     try:
-        return obj[index]
-    except KeyError:
-        return obj["result"][index]
+        spec = importlib.util.spec_from_file_location(module_name, filepath)
+        if spec is None or spec.loader is None:
+            log.debug("Could not create spec for %s at %s", module_name, filepath)
+            return None
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = mod
+        try:
+            spec.loader.exec_module(mod)
+        except BaseException:
+            sys.modules.pop(module_name, None)
+            raise
+        return mod
+    except BaseException as e:
+        log.debug("Failed to load %s from %s: %s", module_name, filepath, e)
+        sys.modules.pop(module_name, None)  # Also clean up on edge-case exceptions
+        return None
 
 
-def get_comfyui_path() -> str | None:
-    """Resolve ComfyUI path via prioritized multi-strategy fallback.
+def _load_module_temp(module_name: str, filepath: str) -> Any:
+    """Load a module via _load_module() then remove it from sys.modules.
 
-    Strategy order:
-      1. COMFYUI_PATH env var (verified with _is_comfyui_directory)
-      2. Relative walk from extension location (realpath + verified)
-      3. CWD walk (legacy fallback, depth-limited)
+    Used during bootstrap for modules that ComfyUI's import chain also loads
+    normally — prevents the cached copy from conflicting with later imports.
     """
-    p = os.environ.get("COMFYUI_PATH")
-    if p and _is_comfyui_directory(p):
-        return p
-    p = _find_from_extension_location()
-    if p:
-        return p
-    return find_path("ComfyUI", max_depth=20)
-
-
-def find_path(name: str, max_depth: int = 20) -> str | None:
-    """Iteratively walk up from CWD to find a directory by name.
-
-    Depth-limited to prevent slow startup on deep trees.
-    Each candidate verified by _is_comfyui_directory() at the caller.
-    """
-    candidate = os.getcwd()
-    for _ in range(max_depth):
-        parent = os.path.dirname(candidate)
-        if parent == candidate:
-            break
-        candidate = parent
-        if os.path.basename(candidate) == name:
-            return candidate
-    return None
+    mod = _load_module(module_name, filepath)
+    sys.modules.pop(module_name, None)
+    return mod
 
 
 def add_comfyui_directory_to_sys_path() -> None:
@@ -245,6 +222,51 @@ def cleanup_comfyui_runtime(unload_models: bool | None = None) -> None:
     run_cleanup_hook("unload_all_models", should_run=should_unload)
     run_cleanup_hook("soft_empty_cache")
     gc.collect()
+
+
+def find_path(name: str, max_depth: int = 20) -> str | None:
+    """Iteratively walk up from CWD to find a directory by name.
+
+    Depth-limited to prevent slow startup on deep trees.
+    Each candidate verified by _is_comfyui_directory() at the caller.
+    """
+    candidate = os.getcwd()
+    for _ in range(max_depth):
+        parent = os.path.dirname(candidate)
+        if parent == candidate:
+            break
+        candidate = parent
+        if os.path.basename(candidate) == name:
+            return candidate
+    return None
+
+
+def get_comfyui_path() -> str | None:
+    """Resolve ComfyUI path via prioritized multi-strategy fallback.
+
+    Strategy order:
+      1. COMFYUI_PATH env var (verified with _is_comfyui_directory)
+      2. Relative walk from extension location (realpath + verified)
+      3. CWD walk (legacy fallback, depth-limited)
+    """
+    p = os.environ.get("COMFYUI_PATH")
+    if p and _is_comfyui_directory(p):
+        return p
+    p = _find_from_extension_location()
+    if p:
+        return p
+    p = find_path("ComfyUI", max_depth=20)
+    if p and _is_comfyui_directory(p):
+        return p
+    return None
+
+
+def get_value_at_index(obj: Union[Sequence, Mapping], index: int) -> Any:
+    """Return a sequence or mapping result item by index."""
+    try:
+        return obj[index]
+    except KeyError:
+        return obj["result"][index]
 
 
 # Workflow data

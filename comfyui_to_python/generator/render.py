@@ -1,8 +1,11 @@
 import inspect
+import logging
 from pprint import pformat
 from typing import Any
 
 import black
+
+log = logging.getLogger(__name__)
 
 from ..node_runtime import import_custom_nodes
 from . import generated_helpers
@@ -25,7 +28,12 @@ class WorkflowRenderer:
         # are picked up without manually updating this list.
         func_strings = []
         for name in generated_helpers.__all__:
-            func = getattr(generated_helpers, name)
+            func = getattr(generated_helpers, name, None)
+            if func is None:
+                log.warning(
+                    "Helper '%s' missing from generated_helpers — skipping", name
+                )
+                continue
             func_strings.append(f"\n{inspect.getsource(func)}")
 
         static_imports = [
