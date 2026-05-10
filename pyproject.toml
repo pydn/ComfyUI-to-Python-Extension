@@ -9,9 +9,6 @@ dependencies = ["black"]
 [project.optional-dependencies]
 dev = ["ruff"]
 
-[tool.uv]
-dev-dependencies = ["ruff"]
-
 [project.urls]
 Repository = "https://github.com/pydn/ComfyUI-to-Python-Extension"
 #  Used by Comfy Registry https://comfyregistry.org
@@ -20,5 +17,3 @@ Repository = "https://github.com/pydn/ComfyUI-to-Python-Extension"
 PublisherId = "pydn"
 DisplayName = "ComfyUI-to-Python-Extension"
 Icon = ""
-
-

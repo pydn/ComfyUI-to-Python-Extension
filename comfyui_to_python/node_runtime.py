@@ -18,9 +18,15 @@ def _is_comfyui_directory(path: str) -> bool:
 def _load_module(module_name: str, filepath: str) -> Any:
     """Load a Python module from an explicit file path, bypassing sys.path.
 
-    This eliminates ALL bare import shadowing attacks by loading modules
+    Significantly reduces bare import shadowing risk by loading modules
     from verified file paths instead of relying on sys.path resolution.
+    If exec_module() raises, the partially-loaded module is removed from
+    sys.modules so subsequent calls start fresh.
     """
+    # Return cached module if already loaded — prevents re-execution
+    # that would reset state (e.g. NODE_CLASS_MAPPINGS after init_extra_nodes).
+    if module_name in sys.modules:
+        return sys.modules[module_name]
     if not os.path.isfile(filepath):
         log.debug("Module file not found: %s (%s)", module_name, filepath)
         return None
@@ -31,7 +37,11 @@ def _load_module(module_name: str, filepath: str) -> Any:
             return None
         mod = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = mod
-        spec.loader.exec_module(mod)
+        try:
+            spec.loader.exec_module(mod)
+        except BaseException:
+            sys.modules.pop(module_name, None)
+            raise
         return mod
     except Exception as e:
         log.debug("Failed to load %s from %s: %s", module_name, filepath, e)
@@ -84,7 +94,10 @@ def get_comfyui_path() -> str | None:
     p = _find_from_extension_location()
     if p:
         return p
-    return find_path("ComfyUI", max_depth=20)
+    p = find_path("ComfyUI", max_depth=20)
+    if p and _is_comfyui_directory(p):
+        return p
+    return None
 
 
 def add_comfyui_directory_to_sys_path() -> None:
@@ -267,10 +280,12 @@ def import_custom_nodes() -> None:
     original_sys_path = list(sys.path)
     sys.path[:] = [p for p in sys.path if p != comfy_subdir]
 
-    server_mod = _load_module("server", os.path.join(comfyui_path, "server.py"))
-
-    # Restore sys.path so nodes and other modules that need comfy/ still work
-    sys.path[:] = original_sys_path
+    try:
+        server_mod = _load_module("server", os.path.join(comfyui_path, "server.py"))
+    finally:
+        # Restore sys.path so nodes and other modules that need comfy/ still work.
+        # Guaranteed even if _load_module raises mid-execution.
+        sys.path[:] = original_sys_path
 
     if execution_mod is None or server_mod is None:
         log.debug(
@@ -292,14 +307,21 @@ def import_custom_nodes() -> None:
 
 
 def get_node_class_mappings() -> dict:
-    """Load ComfyUI node mappings on demand via _load_module()."""
+    """Load ComfyUI node mappings on demand via _load_module().
+
+    Reuses the cached "nodes" module from sys.modules if already loaded
+    (e.g. by import_custom_nodes) to avoid resetting NODE_CLASS_MAPPINGS.
+    """
     add_comfyui_directory_to_sys_path()
     comfyui_path = get_comfyui_path()
     if comfyui_path is None:
         log.debug("get_node_class_mappings: ComfyUI path not found")
         return {}
 
-    nodes_mod = _load_module("nodes", os.path.join(comfyui_path, "nodes.py"))
+    # Reuse cached module if already loaded to avoid resetting mappings.
+    nodes_mod = sys.modules.get("nodes")
+    if nodes_mod is None:
+        nodes_mod = _load_module("nodes", os.path.join(comfyui_path, "nodes.py"))
     if nodes_mod is None:
         return {}
     return getattr(nodes_mod, "NODE_CLASS_MAPPINGS", {})

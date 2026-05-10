@@ -5,19 +5,7 @@ from typing import Any
 import black
 
 from ..node_runtime import import_custom_nodes
-from .generated_helpers import (
-    _find_from_extension_location,
-    _is_comfyui_directory,
-    _load_module,
-    _load_module_temp,
-    add_comfyui_directory_to_sys_path,
-    add_extra_model_paths,
-    bootstrap_comfyui_runtime,
-    cleanup_comfyui_runtime,
-    find_path,
-    get_comfyui_path,
-    get_value_at_index,
-)
+from . import generated_helpers
 from .model import GenerationPlan
 
 
@@ -33,20 +21,11 @@ class WorkflowRenderer:
                 {"workflow": plan.metadata_workflow_data}
             )
 
+        # Auto-discover helpers from generated_helpers.__all__ so new helpers
+        # are picked up without manually updating this list.
         func_strings = []
-        for func in [
-            _load_module,
-            _load_module_temp,
-            _is_comfyui_directory,
-            _find_from_extension_location,
-            get_value_at_index,
-            get_comfyui_path,
-            find_path,
-            add_comfyui_directory_to_sys_path,
-            add_extra_model_paths,
-            bootstrap_comfyui_runtime,
-            cleanup_comfyui_runtime,
-        ]:
+        for name in generated_helpers.__all__:
+            func = getattr(generated_helpers, name)
             func_strings.append(f"\n{inspect.getsource(func)}")
 
         static_imports = [

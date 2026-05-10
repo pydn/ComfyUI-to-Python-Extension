@@ -12,9 +12,7 @@ Covers Approach B from docs/specs/harden-import-path-resolution.html:
 import os
 import sys
 import tempfile
-import types
 import unittest
-from io import StringIO
 from unittest.mock import patch
 
 # Real ComfyUI checkout for integration-style unit tests (parent of this repo)
@@ -192,7 +190,9 @@ class TestGeneratedScriptIsolation(unittest.TestCase):
         renderer = WorkflowRenderer()
         generated = renderer.render(plan)
 
-        self.assertIn("_load_module", generated, "Generated script must embed _load_module()")
+        self.assertIn(
+            "_load_module", generated, "Generated script must embed _load_module()"
+        )
         self.assertIn(
             "spec_from_file_location",
             generated,
@@ -281,6 +281,183 @@ class TestIsComfyuiDirectory(unittest.TestCase):
         from comfyui_to_python.node_runtime import _is_comfyui_directory
 
         self.assertFalse(_is_comfyui_directory("/nonexistent/path/to/comfyui"))
+
+
+class TestLoadModuleFailureCleanup(unittest.TestCase):
+    """Tests for _load_module() behavior when exec_module() raises."""
+
+    def tearDown(self):
+        mod_names_to_clean = [
+            name for name in sys.modules if name.startswith("_test_fail_")
+        ]
+        for name in mod_names_to_clean:
+            del sys.modules[name]
+
+    def test_broken_module_removed_from_sys_modules_on_failure(self):
+        """Given a module that raises during exec, it is removed from sys.modules."""
+        from comfyui_to_python.node_runtime import _load_module
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod_file = os.path.join(tmpdir, "badmodule.py")
+            with open(mod_file, "w") as f:
+                f.write("raise RuntimeError('mid-execution failure')\n")
+
+            result = _load_module("_test_fail_bad", mod_file)
+        self.assertIsNone(result)
+        self.assertNotIn(
+            "_test_fail_bad",
+            sys.modules,
+            "Failed module must not remain cached in sys.modules",
+        )
+
+    def test_broken_module_retried_cleanly(self):
+        """Given a failed load, a subsequent load attempt starts fresh (not from cache)."""
+        from comfyui_to_python.node_runtime import _load_module
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bad_file = os.path.join(tmpdir, "bad.py")
+            good_file = os.path.join(tmpdir, "good.py")
+
+            # First load: bad module that raises
+            with open(bad_file, "w") as f:
+                f.write("raise RuntimeError('fail')\n")
+            result_bad = _load_module("_test_fail_retry", bad_file)
+            self.assertIsNone(result_bad)
+
+            # Overwrite with good module
+            os.remove(bad_file)
+            with open(good_file, "w") as f:
+                f.write("VALUE = 99\n")
+
+            # Reload same name from a different (working) file
+            result_good = _load_module("_test_fail_retry", good_file)
+        self.assertIsNotNone(result_good)
+        self.assertEqual(result_good.VALUE, 99)
+
+
+class TestLoadModuleTemp(unittest.TestCase):
+    """Tests for _load_module_temp() removal from sys.modules."""
+
+    def tearDown(self):
+        mod_names_to_clean = [
+            name for name in sys.modules if name.startswith("_test_temp_")
+        ]
+        for name in mod_names_to_clean:
+            del sys.modules[name]
+
+    def test_module_removed_from_sys_modules_after_temp_load(self):
+        """After _load_module_temp(), the module key is absent from sys.modules."""
+        from comfyui_to_python.node_runtime import _load_module_temp
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod_file = os.path.join(tmpdir, "tempmod.py")
+            with open(mod_file, "w") as f:
+                f.write("VALUE = 123\n")
+
+            mod = _load_module_temp("_test_temp_mod", mod_file)
+        self.assertIsNotNone(mod)
+        self.assertEqual(mod.VALUE, 123)
+        self.assertNotIn(
+            "_test_temp_mod",
+            sys.modules,
+            "Temp module must be removed from sys.modules after load",
+        )
+
+    def test_module_removed_on_temp_load_failure(self):
+        """After _load_module_temp() fails, the module key is absent from sys.modules."""
+        from comfyui_to_python.node_runtime import _load_module_temp
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod_file = os.path.join(tmpdir, "badtemp.py")
+            with open(mod_file, "w") as f:
+                f.write("raise RuntimeError('fail')\n")
+
+            result = _load_module_temp("_test_temp_bad", mod_file)
+        self.assertIsNone(result)
+        self.assertNotIn(
+            "_test_temp_bad",
+            sys.modules,
+            "Failed temp module must be removed from sys.modules",
+        )
+
+
+class TestRepeatedNodeLoad(unittest.TestCase):
+    """Tests that repeated _load_module('nodes', ...) calls respect the cache."""
+
+    def tearDown(self):
+        if "_test_nodes" in sys.modules:
+            del sys.modules["_test_nodes"]
+
+    def test_repeated_load_preserves_cached_attributes(self):
+        """Second _load_module() for same name returns cached module, not a fresh copy."""
+        from comfyui_to_python.node_runtime import _load_module
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mod_file = os.path.join(tmpdir, "mynodes.py")
+            with open(mod_file, "w") as f:
+                f.write("NODE_CLASS_MAPPINGS = {'A': 1}\n")
+
+            first = _load_module("_test_nodes", mod_file)
+            self.assertIsNotNone(first)
+
+            # Mutate the cached module to simulate init_extra_nodes()
+            first.NODE_CLASS_MAPPINGS["B"] = 2
+
+            # Second load with same name must return cached copy, preserving mutation
+            second = _load_module("_test_nodes", mod_file)
+        self.assertIs(first, second)
+        self.assertEqual(second.NODE_CLASS_MAPPINGS.get("B"), 2)
+
+
+class TestGetComfyuiPathThirdStrategy(unittest.TestCase):
+    """Tests for get_comfyui_path() third-strategy verification."""
+
+    def test_fallback_rejects_non_comfyui_directory(self):
+        """Given a directory named ComfyUI without nodes.py, third strategy rejects it."""
+        from comfyui_to_python.node_runtime import get_comfyui_path
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a fake "ComfyUI" directory (no nodes.py)
+            fake_dir = os.path.join(tmpdir, "ComfyUI")
+            os.makedirs(fake_dir)
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(tmpdir)
+                with patch.dict("os.environ", {}, clear=False):
+                    # Strip COMFYUI_PATH so fallback strategies activate
+                    env_copy = dict(os.environ)
+                    env_copy.pop("COMFYUI_PATH", None)
+                    with patch.dict("os.environ", env_copy, clear=True):
+                        result = get_comfyui_path()
+            finally:
+                os.chdir(original_cwd)
+
+        # Must NOT return the fake directory
+        self.assertNotEqual(result, fake_dir)
+
+
+class TestImportCustomNodesSysPathRestoration(unittest.TestCase):
+    """Tests for sys.path restoration in import_custom_nodes()."""
+
+    def test_sys_path_restored_on_crash(self):
+        """Given a crash during import_custom_nodes(), sys.path is still restored."""
+        from comfyui_to_python.node_runtime import import_custom_nodes
+
+        original_path = sys.path[:]
+
+        with patch(
+            "comfyui_to_python.node_runtime._load_module",
+            side_effect=RuntimeError("simulated crash during server load"),
+        ):
+            try:
+                import_custom_nodes()
+            except RuntimeError:
+                pass  # Expected crash
+
+        # sys.path should still contain all original entries (no dangling state)
+        for entry in original_path:
+            self.assertIn(entry, sys.path)
 
 
 if __name__ == "__main__":
