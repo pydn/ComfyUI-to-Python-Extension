@@ -9,6 +9,7 @@ from .generated_helpers import (
     _find_from_extension_location,
     _is_comfyui_directory,
     _load_module,
+    _load_module_temp,
     add_comfyui_directory_to_sys_path,
     add_extra_model_paths,
     bootstrap_comfyui_runtime,
@@ -35,6 +36,7 @@ class WorkflowRenderer:
         func_strings = []
         for func in [
             _load_module,
+            _load_module_temp,
             _is_comfyui_directory,
             _find_from_extension_location,
             get_value_at_index,

@@ -126,6 +126,17 @@ def add_extra_model_paths() -> None:
         log.debug("Could not find the extra_model_paths config file.")
 
 
+def _load_module_temp(module_name: str, filepath: str) -> Any:
+    """Load a module via _load_module() then remove it from sys.modules.
+
+    Used during bootstrap for modules that ComfyUI's import chain also loads
+    normally — prevents the cached copy from conflicting with later imports.
+    """
+    mod = _load_module(module_name, filepath)
+    sys.modules.pop(module_name, None)
+    return mod
+
+
 def bootstrap_comfyui_runtime() -> None:
     """Mirror the allocator-related ComfyUI startup steps before torch import."""
     add_comfyui_directory_to_sys_path()
@@ -134,21 +145,28 @@ def bootstrap_comfyui_runtime() -> None:
         log.debug("bootstrap_comfyui_runtime: ComfyUI path not found")
         return
 
-    options_mod = _load_module(
-        "comfy.options", os.path.join(comfyui_path, "comfy", "options.py")
+    # Use _load_module for file-based isolation, but with temporary names so
+    # the modules are removed from sys.modules after reading values.
+    # This prevents conflicts when ComfyUI's internal import chain (e.g.
+    # nodes.py -> comfy.cli_args) later loads these modules normally.
+    options_mod = _load_module_temp(
+        "_bootstrap_options", os.path.join(comfyui_path, "comfy", "options.py")
     )
     if options_mod is not None:
         options_mod.enable_args_parsing()
 
-    cli_args_mod = _load_module(
-        "comfy.cli_args", os.path.join(comfyui_path, "comfy", "cli_args.py")
+    cli_args_mod = _load_module_temp(
+        "_bootstrap_cli_args", os.path.join(comfyui_path, "comfy", "cli_args.py")
     )
     args = getattr(cli_args_mod, "args", None) if cli_args_mod else None
+
+    if args is None:
+        return
 
     if os.name == "nt":
         os.environ["MIMALLOC_PURGE_DELAY"] = "0"
 
-    if args is not None and args.default_device is not None:
+    if args.default_device is not None:
         default_dev = args.default_device
         devices = list(range(32))
         devices.remove(default_dev)
@@ -157,23 +175,19 @@ def bootstrap_comfyui_runtime() -> None:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(devices)
         os.environ["HIP_VISIBLE_DEVICES"] = str(devices)
 
-    if args is not None and args.cuda_device is not None:
+    if args.cuda_device is not None:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(args.cuda_device)
         os.environ["HIP_VISIBLE_DEVICES"] = str(args.cuda_device)
         os.environ["ASCEND_RT_VISIBLE_DEVICES"] = str(args.cuda_device)
 
-    if args is not None and args.oneapi_device_selector is not None:
+    if args.oneapi_device_selector is not None:
         os.environ["ONEAPI_DEVICE_SELECTOR"] = args.oneapi_device_selector
 
-    if (
-        args is not None
-        and args.deterministic
-        and "CUBLAS_WORKSPACE_CONFIG" not in os.environ
-    ):
+    if args.deterministic and "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
-    cuda_malloc_mod = _load_module(
-        "cuda_malloc", os.path.join(comfyui_path, "cuda_malloc.py")
+    cuda_malloc_mod = _load_module_temp(
+        "_bootstrap_cuda_malloc", os.path.join(comfyui_path, "cuda_malloc.py")
     )
     if (
         cuda_malloc_mod is not None
