@@ -258,7 +258,19 @@ def import_custom_nodes() -> None:
         "execution", os.path.join(comfyui_path, "execution.py")
     )
     nodes_mod = _load_module("nodes", os.path.join(comfyui_path, "nodes.py"))
+
+    # nodes.py inserts comfy/ subdirectory into sys.path, which shadows the
+    # top-level utils/ package (comfy/utils.py vs utils/). This breaks
+    # server.py → app.frontend_management → from utils.install_util import ...
+    # Filter it out temporarily so server.py loads cleanly.
+    comfy_subdir = os.path.join(comfyui_path, "comfy")
+    original_sys_path = list(sys.path)
+    sys.path[:] = [p for p in sys.path if p != comfy_subdir]
+
     server_mod = _load_module("server", os.path.join(comfyui_path, "server.py"))
+
+    # Restore sys.path so nodes and other modules that need comfy/ still work
+    sys.path[:] = original_sys_path
 
     if execution_mod is None or server_mod is None:
         log.debug(
