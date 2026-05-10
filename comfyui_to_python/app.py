@@ -1,4 +1,5 @@
 import copy
+import sys
 
 from typing import TextIO
 
@@ -57,6 +58,13 @@ class ExportApplication:
         }
         if self.needs_init_custom_nodes or missing_node_types:
             self.custom_node_importer()
+            # Re-read from the cached "nodes" module in sys.modules after
+            # import_custom_nodes() populates it with extras (comfy_extras,
+            # custom node directories, etc.). The original dict is a stale copy.
+            nodes_mod = sys.modules.get("nodes")
+            if nodes_mod is not None:
+                fresh_mappings = getattr(nodes_mod, "NODE_CLASS_MAPPINGS", {})
+                self.node_class_mappings = fresh_mappings
             self.base_node_class_mappings = copy.deepcopy(self.node_class_mappings)
 
         load_order = LoadOrderDeterminer(

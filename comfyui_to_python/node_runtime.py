@@ -261,7 +261,14 @@ def import_custom_nodes() -> None:
     server_mod = _load_module("server", os.path.join(comfyui_path, "server.py"))
 
     if execution_mod is None or server_mod is None:
-        log.debug("import_custom_nodes: could not load required modules")
+        log.debug(
+            "import_custom_nodes: could not load execution/server modules. "
+            "Proceeding without full PromptServer/PromptQueue setup."
+        )
+        # Even without server, we can still populate NODE_CLASS_MAPPINGS from
+        # comfy_extras and built-in extra nodes.
+        if nodes_mod is not None and hasattr(nodes_mod, "init_extra_nodes"):
+            asyncio.run(nodes_mod.init_extra_nodes())
         return
 
     loop = asyncio.new_event_loop()
