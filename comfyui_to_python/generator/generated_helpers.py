@@ -1,4 +1,5 @@
 from ..node_runtime import (
+    _find_file,
     _find_from_extension_location,
     _is_comfyui_directory,
     _load_module,
@@ -13,6 +14,7 @@ from ..node_runtime import (
 )
 
 __all__ = [
+    "_find_file",
     "_find_from_extension_location",
     "_is_comfyui_directory",
     "_load_module",
