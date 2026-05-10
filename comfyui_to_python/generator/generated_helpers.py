@@ -1,4 +1,7 @@
 from ..node_runtime import (
+    _find_from_extension_location,
+    _is_comfyui_directory,
+    _load_module,
     add_comfyui_directory_to_sys_path,
     add_extra_model_paths,
     bootstrap_comfyui_runtime,
@@ -9,6 +12,9 @@ from ..node_runtime import (
 )
 
 __all__ = [
+    "_find_from_extension_location",
+    "_is_comfyui_directory",
+    "_load_module",
     "add_comfyui_directory_to_sys_path",
     "add_extra_model_paths",
     "bootstrap_comfyui_runtime",

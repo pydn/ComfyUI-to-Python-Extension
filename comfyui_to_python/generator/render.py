@@ -6,6 +6,9 @@ import black
 
 from ..node_runtime import import_custom_nodes
 from .generated_helpers import (
+    _find_from_extension_location,
+    _is_comfyui_directory,
+    _load_module,
     add_comfyui_directory_to_sys_path,
     add_extra_model_paths,
     bootstrap_comfyui_runtime,
@@ -31,6 +34,9 @@ class WorkflowRenderer:
 
         func_strings = []
         for func in [
+            _load_module,
+            _is_comfyui_directory,
+            _find_from_extension_location,
             get_value_at_index,
             get_comfyui_path,
             find_path,
@@ -43,11 +49,15 @@ class WorkflowRenderer:
 
         static_imports = [
             "# Imports",
+            "import importlib.util",
             "import json",
+            "import logging",
             "import os",
             "import random",
             "import sys",
             "from typing import Sequence, Mapping, Any, Union",
+            "",
+            "log = logging.getLogger(__name__)",
         ] + func_strings
 
         if plan.custom_nodes:
