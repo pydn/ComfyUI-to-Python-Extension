@@ -28,13 +28,18 @@ class WorkflowRenderer:
         # are picked up without manually updating this list.
         func_strings = []
         for name in generated_helpers.__all__:
-            func = getattr(generated_helpers, name, None)
-            if func is None:
+            obj = getattr(generated_helpers, name, None)
+            if obj is None:
                 log.warning(
                     "Helper '%s' missing from generated_helpers — skipping", name
                 )
                 continue
-            func_strings.append(f"\n{inspect.getsource(func)}")
+            # _GENERATED_GLOBALS is a list of declaration strings (not a callable)
+            if name == "_GENERATED_GLOBALS":
+                for decl in obj:
+                    func_strings.append(decl)
+            else:
+                func_strings.append(f"\n{inspect.getsource(obj)}")
 
         static_imports = [
             "# Imports",

@@ -206,6 +206,11 @@ def _bootstrap_import(module_name: str) -> Any:
 
 _DISCOVERED_OPTIONS: tuple[frozenset[str], frozenset[str]] | None = None
 
+# Module-level globals that must appear in generated standalone scripts.
+_GENERATED_GLOBALS = [
+    "_DISCOVERED_OPTIONS = None",
+]
+
 
 def _discover_comfyui_cli_options() -> tuple[frozenset[str], frozenset[str]]:
     """Dynamically discover CLI options from ComfyUI's argparse parser.
@@ -224,6 +229,7 @@ def _discover_comfyui_cli_options() -> tuple[frozenset[str], frozenset[str]]:
 
     # Temporarily replace argv to parse with safe defaults during discovery.
     original_argv = sys.argv
+    pre_discovery_modules = set(sys.modules.keys())
     try:
         sys.argv = ["_discover"]
         cli_args_mod = _bootstrap_import("comfy.cli_args")
@@ -234,6 +240,19 @@ def _discover_comfyui_cli_options() -> tuple[frozenset[str], frozenset[str]]:
         return _DISCOVERED_OPTIONS
     finally:
         sys.argv = original_argv
+
+    # Remove ComfyUI modules loaded during discovery so that
+    # bootstrap_comfyui_runtime() can import them fresh with real argv.
+    for mod_name in set(sys.modules.keys()) - pre_discovery_modules:
+        if mod_name.startswith("comfy.") or mod_name in (
+            "cli_args",
+            "folder_paths",
+            "execution",
+            "nodes",
+            "server",
+            "comfy_main",
+        ):
+            sys.modules.pop(mod_name, None)
 
     if cli_args_mod is None:
         log.debug("bootstrap returned None for comfy.cli_args")
@@ -395,6 +414,36 @@ def bootstrap_comfyui_runtime() -> None:
 
         if args.deterministic and "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
             os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+
+        # Apply directory overrides from CLI args so that output, input, and user
+        # directories can be redirected (e.g. when the default ComfyUI output
+        # directory is on a read-only mount).
+        if args.output_directory:
+            folder_paths_mod = _bootstrap_import("folder_paths")
+            if folder_paths_mod is not None and hasattr(
+                folder_paths_mod, "set_output_directory"
+            ):
+                folder_paths_mod.set_output_directory(
+                    os.path.abspath(args.output_directory)
+                )
+
+        if args.input_directory:
+            folder_paths_mod = _bootstrap_import("folder_paths")
+            if folder_paths_mod is not None and hasattr(
+                folder_paths_mod, "set_input_directory"
+            ):
+                folder_paths_mod.set_input_directory(
+                    os.path.abspath(args.input_directory)
+                )
+
+        if args.user_directory:
+            folder_paths_mod = _bootstrap_import("folder_paths")
+            if folder_paths_mod is not None and hasattr(
+                folder_paths_mod, "set_user_directory"
+            ):
+                folder_paths_mod.set_user_directory(
+                    os.path.abspath(args.user_directory)
+                )
 
     cuda_malloc_mod = _load_module_temp(
         "_bootstrap_cuda_malloc", os.path.join(comfyui_path, "cuda_malloc.py")

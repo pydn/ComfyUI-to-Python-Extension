@@ -9,6 +9,7 @@ import warnings
 from typing import Sequence, Mapping, Any, Union
 
 log = logging.getLogger(__name__)
+_DISCOVERED_OPTIONS = None
 
 
 def _bootstrap_import(module_name: str) -> Any:
@@ -27,6 +28,92 @@ def _bootstrap_import(module_name: str) -> Any:
     return __import__(module_name, fromlist=[""])
 
 
+def _discover_comfyui_cli_options() -> tuple[frozenset[str], frozenset[str]]:
+    """Dynamically discover CLI options from ComfyUI's argparse parser.
+
+    Inspects `comfy.cli_args.parser._actions` to extract all recognized
+    option strings and which ones take values. This eliminates the need for
+    a hardcoded list that drifts when ComfyUI adds/removes flags.
+
+    Returns:
+        (known_options, value_taking_options) — frozensets of option strings.
+        value_taking_options is a subset of known_options.
+    """
+    global _DISCOVERED_OPTIONS
+    if _DISCOVERED_OPTIONS is not None:
+        return _DISCOVERED_OPTIONS
+
+    # Temporarily replace argv to parse with safe defaults during discovery.
+    original_argv = sys.argv
+    pre_discovery_modules = set(sys.modules.keys())
+    try:
+        sys.argv = ["_discover"]
+        cli_args_mod = _bootstrap_import("comfy.cli_args")
+    except ModuleNotFoundError:
+        log.debug("comfy.cli_args not available for option discovery")
+        sys.argv = original_argv
+        _DISCOVERED_OPTIONS = frozenset(), frozenset()
+        return _DISCOVERED_OPTIONS
+    finally:
+        sys.argv = original_argv
+
+    # Remove ComfyUI modules loaded during discovery so that
+    # bootstrap_comfyui_runtime() can import them fresh with real argv.
+    for mod_name in set(sys.modules.keys()) - pre_discovery_modules:
+        if mod_name.startswith("comfy.") or mod_name in (
+            "cli_args",
+            "folder_paths",
+            "execution",
+            "nodes",
+            "server",
+            "comfy_main",
+        ):
+            sys.modules.pop(mod_name, None)
+
+    if cli_args_mod is None:
+        log.debug("bootstrap returned None for comfy.cli_args")
+        _DISCOVERED_OPTIONS = frozenset(), frozenset()
+        return _DISCOVERED_OPTIONS
+
+    parser = getattr(cli_args_mod, "parser", None)
+    if parser is None:
+        log.debug("Could not find parser in comfy.cli_args")
+        _DISCOVERED_OPTIONS = frozenset(), frozenset()
+        return _DISCOVERED_OPTIONS
+
+    known: set[str] = set()
+    value_taking: set[str] = set()
+    for action in parser._actions:
+        for opt in action.option_strings:
+            if not opt.startswith("--"):
+                continue
+            # Strip inline default shown by argparse (e.g. '--listen [IP]')
+            base = opt.split("[")[0].strip()
+            known.add(base)
+            # Determine if the option takes a value argument.
+            # nargs=None means a required value; numeric nargs means N values;
+            # nargs='?' means optional value (still count as value-taking for
+            # filtering since --flag value is valid).
+            nargs = getattr(action, "nargs", None)
+            # Skip boolean store_true/store_false actions — they don't take values
+            action_name = type(action).__name__
+            if action_name in ("_StoreTrueAction", "_StoreFalseAction"):
+                continue
+            if nargs is not None and nargs != 0:
+                value_taking.add(base)
+            elif hasattr(action, "const") and action.const is not None:
+                # Optional value with const default (e.g. --listen without arg)
+                value_taking.add(base)
+            elif getattr(action, "type", None) is not None or nargs is None:
+                # Has a type converter → requires a value.
+                # nargs defaults to None for single-value args.
+                if action.dest != "help":
+                    value_taking.add(base)
+
+    _DISCOVERED_OPTIONS = frozenset(known), frozenset(value_taking)
+    return _DISCOVERED_OPTIONS
+
+
 def _filter_comfyui_args(argv: list[str]) -> list[str]:
     """Filter sys.argv to keep only ComfyUI-recognized CLI arguments.
 
@@ -34,125 +121,36 @@ def _filter_comfyui_args(argv: list[str]) -> list[str]:
     contain flags that aren't valid for ComfyUI's argparse. This filters them
     out so the import doesn't crash while still preserving --cpu and other
     ComfyUI flags passed by the user.
+
+    Uses _discover_comfyui_cli_options() to dynamically discover recognized
+    options from ComfyUI's parser rather than maintaining a hardcoded list.
     """
-    _RECOGNIZED = frozenset(
-        {
-            "--cpu",
-            "--cpu-vae",
-            "--gpu-only",
-            "--highvram",
-            "--normalvram",
-            "--lowvram",
-            "--novram",
-            "--reserve-vram",
-            "--async-offload",
-            "--disable-async-offload",
-            "--disable-dynamic-vram",
-            "--enable-dynamic-vram",
-            "--force-non-blocking",
-            "--default-hashing-function",
-            "--disable-smart-memory",
-            "--deterministic",
-            "--fast",
-            "--disable-pinned-memory",
-            "--mmap-torch-files",
-            "--disable-mmap",
-            "--dont-print-server",
-            "--quick-test-for-ci",
-            "--windows-standalone-build",
-            "--disable-metadata",
-            "--disable-all-custom-nodes",
-            "--whitelist-custom-nodes",
-            "--disable-api-nodes",
-            "--multi-user",
-            "--verbose",
-            "--log-stdout",
-            "--front-end-version",
-            "--front-end-root",
-            "--user-directory",
-            "--enable-compress-response-body",
-            "--comfy-api-base",
-            "--database-url",
-            "--enable-assets",
-            "--cache-classic",
-            "--cache-lru",
-            "--cache-none",
-            "--cache-ram",
-            "--use-split-cross-attention",
-            "--use-quad-cross-attention",
-            "--use-pytorch-cross-attention",
-            "--use-sage-attention",
-            "--use-flash-attention",
-            "--disable-xformers",
-            "--force-upcast-attention",
-            "--dont-upcast-attention",
-            "--enable-manager",
-            "--disable-manager-ui",
-            "--enable-manager-legacy-ui",
-            "--directml",
-            "--oneapi-device-selector",
-            "--disable-ipex-optimize",
-            "--supports-fp8-compute",
-            "--preview-method",
-            "--preview-size",
-            "--cuda-device",
-            "--default-device",
-        }
-    )
+    known, value_taking = _discover_comfyui_cli_options()
+
+    # Extract base option from tokens like '--cuda-device=0'
+    def _base_option(token: str) -> str | None:
+        if "=" in token:
+            return token.split("=")[0]
+        return token
+
     result = [argv[0]] if argv else []
     i = 1
     while i < len(argv):
         token = argv[i]
-        if token in _RECOGNIZED or token.startswith("--cuda-device="):
+        # Skip single-char flags (e.g. -v, -s from test runners)
+        if token.startswith("-") and not token.startswith("--"):
+            i += 1
+            continue
+        base = _base_option(token)
+        if base in known:
             result.append(token)
-            # Include value arg for known flags that expect one
-            if (
-                not token.startswith("--disable-")
-                and not token.startswith("--enable-")
-                and token
-                not in {
-                    "--cpu",
-                    "--cpu-vae",
-                    "--gpu-only",
-                    "--highvram",
-                    "--normalvram",
-                    "--lowvram",
-                    "--novram",
-                    "--force-non-blocking",
-                    "--disable-pinned-memory",
-                    "--mmap-torch-files",
-                    "--disable-mmap",
-                    "--dont-print-server",
-                    "--quick-test-for-ci",
-                    "--windows-standalone-build",
-                    "--disable-metadata",
-                    "--disable-all-custom-nodes",
-                    "--disable-api-nodes",
-                    "--multi-user",
-                    "--log-stdout",
-                    "--enable-compress-response-body",
-                    "--deterministic",
-                    "--disable-xformers",
-                    "--force-upcast-attention",
-                    "--dont-upcast-attention",
-                    "--enable-manager",
-                    "--disable-manager-ui",
-                    "--enable-manager-legacy-ui",
-                    "--cache-classic",
-                    "--use-split-cross-attention",
-                    "--use-quad-cross-attention",
-                    "--use-pytorch-cross-attention",
-                    "--use-sage-attention",
-                    "--use-flash-attention",
-                    "--disable-ipex-optimize",
-                    "--supports-fp8-compute",
-                }
-            ):
-                if i + 1 < len(argv):
+            # If the option takes a value and it's not inline (=), consume next arg
+            if base in value_taking and "=" not in token:
+                if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
                     result.append(argv[i + 1])
                     i += 1
         elif token.startswith("--"):
-            # Unknown flag — skip it and its value
+            # Unknown --flag — skip it (and its value if present)
             if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
                 i += 1
         else:
@@ -374,6 +372,36 @@ def bootstrap_comfyui_runtime() -> None:
 
         if args.deterministic and "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
             os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+
+        # Apply directory overrides from CLI args so that output, input, and user
+        # directories can be redirected (e.g. when the default ComfyUI output
+        # directory is on a read-only mount).
+        if args.output_directory:
+            folder_paths_mod = _bootstrap_import("folder_paths")
+            if folder_paths_mod is not None and hasattr(
+                folder_paths_mod, "set_output_directory"
+            ):
+                folder_paths_mod.set_output_directory(
+                    os.path.abspath(args.output_directory)
+                )
+
+        if args.input_directory:
+            folder_paths_mod = _bootstrap_import("folder_paths")
+            if folder_paths_mod is not None and hasattr(
+                folder_paths_mod, "set_input_directory"
+            ):
+                folder_paths_mod.set_input_directory(
+                    os.path.abspath(args.input_directory)
+                )
+
+        if args.user_directory:
+            folder_paths_mod = _bootstrap_import("folder_paths")
+            if folder_paths_mod is not None and hasattr(
+                folder_paths_mod, "set_user_directory"
+            ):
+                folder_paths_mod.set_user_directory(
+                    os.path.abspath(args.user_directory)
+                )
 
     cuda_malloc_mod = _load_module_temp(
         "_bootstrap_cuda_malloc", os.path.join(comfyui_path, "cuda_malloc.py")

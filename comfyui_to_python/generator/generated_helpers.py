@@ -1,4 +1,5 @@
 from ..node_runtime import (
+    _GENERATED_GLOBALS,
     _bootstrap_import,
     _discover_comfyui_cli_options,
     _filter_comfyui_args,
@@ -17,6 +18,7 @@ from ..node_runtime import (
 )
 
 __all__ = [
+    "_GENERATED_GLOBALS",
     "_bootstrap_import",
     "_discover_comfyui_cli_options",
     "_filter_comfyui_args",
