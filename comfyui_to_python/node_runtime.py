@@ -188,6 +188,22 @@ def _load_module_temp(module_name: str, filepath: str) -> Any:
     return mod
 
 
+def _bootstrap_import(module_name: str) -> Any:
+    """Import a ComfyUI module using normal import machinery.
+
+    Uses __import__() so namespace packages (e.g. comfy/) resolve correctly.
+    The module remains cached in sys.modules so later re-imports by ComfyUI's
+    internal chain reuse the same instance (including parsed CLI args).
+    """
+    # Ensure parent namespace exists for dotted names (namespace package support)
+    parts = module_name.split(".")
+    for i in range(1, len(parts)):
+        parent = ".".join(parts[:i])
+        if parent not in sys.modules:
+            __import__(parent)
+    return __import__(module_name, fromlist=[""])
+
+
 def _filter_comfyui_args(argv: list[str]) -> list[str]:
     """Filter sys.argv to keep only ComfyUI-recognized CLI arguments.
 
@@ -266,7 +282,7 @@ def _filter_comfyui_args(argv: list[str]) -> list[str]:
         token = argv[i]
         if token in _RECOGNIZED or token.startswith("--cuda-device="):
             result.append(token)
-            # Skip the next arg if this flag expects a value and isn't boolean
+            # Include value arg for known flags that expect one
             if (
                 not token.startswith("--disable-")
                 and not token.startswith("--enable-")
@@ -309,7 +325,9 @@ def _filter_comfyui_args(argv: list[str]) -> list[str]:
                     "--supports-fp8-compute",
                 }
             ):
-                i += 1
+                if i + 1 < len(argv):
+                    result.append(argv[i + 1])
+                    i += 1
         elif token.startswith("--"):
             # Unknown flag — skip it and its value
             if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
@@ -340,20 +358,14 @@ def bootstrap_comfyui_runtime() -> None:
     original_argv = sys.argv
     sys.argv = _filter_comfyui_args(sys.argv)
 
-    # Load via _load_module() from verified file paths — maintains the
-    # importlib isolation guarantee for ALL ComfyUI modules including those
-    # within the comfy/ namespace package. Modules are cached in sys.modules
-    # under canonical names so parsed CLI args persist for the full runtime
-    # lifecycle.
-    options_mod = _load_module(
-        "comfy.options", os.path.join(comfyui_path, "comfy", "options.py")
-    )
+    # Load via _bootstrap_import() for namespace-package-safe imports.
+    # Modules are cached in sys.modules under canonical names so parsed CLI
+    # args persist for the full runtime lifecycle.
+    options_mod = _bootstrap_import("comfy.options")
     if options_mod is not None:
         options_mod.enable_args_parsing()
 
-    cli_args_mod = _load_module(
-        "comfy.cli_args", os.path.join(comfyui_path, "comfy", "cli_args.py")
-    )
+    cli_args_mod = _bootstrap_import("comfy.cli_args")
 
     # Restore original argv so that downstream code sees what was actually passed
     sys.argv = original_argv
@@ -376,25 +388,27 @@ def bootstrap_comfyui_runtime() -> None:
     if os.name == "nt":
         os.environ["MIMALLOC_PURGE_DELAY"] = "0"
 
-    if args.default_device is not None:
-        default_dev = args.default_device
-        devices = list(range(32))
-        devices.remove(default_dev)
-        devices.insert(0, default_dev)
-        devices = ",".join(map(str, devices))
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(devices)
-        os.environ["HIP_VISIBLE_DEVICES"] = str(devices)
+    # Guard all args access — args may be None during export path
+    if args is not None:
+        if args.default_device is not None:
+            default_dev = args.default_device
+            devices = list(range(32))
+            devices.remove(default_dev)
+            devices.insert(0, default_dev)
+            devices = ",".join(map(str, devices))
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(devices)
+            os.environ["HIP_VISIBLE_DEVICES"] = str(devices)
 
-    if args.cuda_device is not None:
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(args.cuda_device)
-        os.environ["HIP_VISIBLE_DEVICES"] = str(args.cuda_device)
-        os.environ["ASCEND_RT_VISIBLE_DEVICES"] = str(args.cuda_device)
+        if args.cuda_device is not None:
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(args.cuda_device)
+            os.environ["HIP_VISIBLE_DEVICES"] = str(args.cuda_device)
+            os.environ["ASCEND_RT_VISIBLE_DEVICES"] = str(args.cuda_device)
 
-    if args.oneapi_device_selector is not None:
-        os.environ["ONEAPI_DEVICE_SELECTOR"] = args.oneapi_device_selector
+        if args.oneapi_device_selector is not None:
+            os.environ["ONEAPI_DEVICE_SELECTOR"] = args.oneapi_device_selector
 
-    if args.deterministic and "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
-        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+        if args.deterministic and "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
+            os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
     cuda_malloc_mod = _load_module_temp(
         "_bootstrap_cuda_malloc", os.path.join(comfyui_path, "cuda_malloc.py")
