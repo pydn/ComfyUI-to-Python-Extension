@@ -356,13 +356,20 @@ def bootstrap_comfyui_runtime() -> None:
     original_argv = sys.argv
     sys.argv = _filter_comfyui_args(sys.argv)
 
-    # Load via normal import (namespace-package safe) and keep in sys.modules
-    # so parsed CLI args persist for the full runtime lifecycle.
-    options_mod = _bootstrap_import("comfy.options")
+    # Load via _load_module() from verified file paths — maintains the
+    # importlib isolation guarantee for ALL ComfyUI modules including those
+    # within the comfy/ namespace package. Modules are cached in sys.modules
+    # under canonical names so parsed CLI args persist for the full runtime
+    # lifecycle.
+    options_mod = _load_module(
+        "comfy.options", os.path.join(comfyui_path, "comfy", "options.py")
+    )
     if options_mod is not None:
         options_mod.enable_args_parsing()
 
-    cli_args_mod = _bootstrap_import("comfy.cli_args")
+    cli_args_mod = _load_module(
+        "comfy.cli_args", os.path.join(comfyui_path, "comfy", "cli_args.py")
+    )
 
     # Restore original argv so that downstream code sees what was actually passed
     sys.argv = original_argv

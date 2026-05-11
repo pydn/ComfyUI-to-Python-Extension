@@ -5,11 +5,11 @@ from typing import Any
 
 import black
 
-log = logging.getLogger(__name__)
-
 from ..node_runtime import import_custom_nodes
 from . import generated_helpers
 from .model import GenerationPlan
+
+log = logging.getLogger(__name__)
 
 
 class WorkflowRenderer:
@@ -44,6 +44,7 @@ class WorkflowRenderer:
             "import os",
             "import random",
             "import sys",
+            "import warnings",
             "from typing import Sequence, Mapping, Any, Union",
             "",
             "log = logging.getLogger(__name__)",

@@ -146,9 +146,9 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
 
         self.assertIn("def bootstrap_comfyui_runtime()", generated)
         self.assertIn("def cleanup_comfyui_runtime(", generated)
-        # Bootstrap uses normal imports (_bootstrap_import) with enable_args_parsing,
-        # keeping parsed CLI args cached in sys.modules for the full runtime lifecycle.
-        self.assertIn("_bootstrap_import", generated)
+        # Bootstrap uses _load_module() from verified file paths, keeping
+        # parsed CLI args cached in sys.modules for the full runtime lifecycle.
+        self.assertIn("_load_module", generated)
         self.assertIn("comfy.options", generated)
         self.assertIn("enable_args_parsing()", generated)
         self.assertIn("cuda_malloc.py", generated)

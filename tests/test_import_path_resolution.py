@@ -261,6 +261,29 @@ class TestGeneratedScriptIsolation(unittest.TestCase):
             "Generated script must use importlib isolation",
         )
 
+    def test_generated_script_includes_warnings_import(self):
+        """Generated scripts must include 'import warnings' for cleanup_comfyui_runtime."""
+        from comfyui_to_python.generator.render import WorkflowRenderer
+        from comfyui_to_python.generator.model import GenerationPlan
+
+        plan = GenerationPlan(
+            workflow_data={"1": {"class_type": "CheckpointLoaderSimple"}},
+            metadata_workflow_data=None,
+            custom_nodes=False,
+            import_statements={},
+            special_functions_code=[],
+            loop_code=["result = some_node()"],
+            queue_size=1,
+        )
+        renderer = WorkflowRenderer()
+        generated = renderer.render(plan)
+
+        self.assertIn(
+            "import warnings",
+            generated,
+            "Generated script must import 'warnings' (used by cleanup_comfyui_runtime)",
+        )
+
     def test_generated_script_no_bare_comfyui_imports(self):
         """Generated scripts must have zero bare imports of ComfyUI internals."""
         from comfyui_to_python.generator.render import WorkflowRenderer
