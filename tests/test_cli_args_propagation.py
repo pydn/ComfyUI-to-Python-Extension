@@ -130,10 +130,14 @@ class TestDiscoverComfyuiCliOptions(unittest.TestCase):
     """Tests for _discover_comfyui_cli_options - dynamic parser inspection."""
 
     def tearDown(self):
-        # Reset global cache so tests are isolated
+        # Reset global cache so tests are isolated.
+        # After refactor, the actual cache lives in runtime/bootstrap.py;
+        # reset both to ensure full isolation.
         import comfyui_to_python.node_runtime as rt
+        from comfyui_to_python.runtime import bootstrap as bs
 
         rt._DISCOVERED_OPTIONS = None
+        bs._DISCOVERED_OPTIONS = None
 
     def test_returns_known_boolean_flags(self):
         """Discovered options include known boolean flags like --cpu."""
@@ -147,7 +151,7 @@ class TestDiscoverComfyuiCliOptions(unittest.TestCase):
         mock_parser.add_argument("--lowvram", action="store_true")
 
         with patch(
-            "comfyui_to_python.node_runtime._bootstrap_import",
+            "comfyui_to_python.runtime.module_loader._bootstrap_import",
             return_value=type("FakeMod", (), {"parser": mock_parser})(),
         ):
             known, _ = _discover_comfyui_cli_options()
@@ -166,7 +170,7 @@ class TestDiscoverComfyuiCliOptions(unittest.TestCase):
         mock_parser.add_argument("--cuda-device", type=int)
 
         with patch(
-            "comfyui_to_python.node_runtime._bootstrap_import",
+            "comfyui_to_python.runtime.module_loader._bootstrap_import",
             return_value=type("FakeMod", (), {"parser": mock_parser})(),
         ):
             known, value_taking = _discover_comfyui_cli_options()
@@ -191,7 +195,7 @@ class TestDiscoverComfyuiCliOptions(unittest.TestCase):
             return type("FakeMod", (), {"parser": mock_parser})()
 
         with patch(
-            "comfyui_to_python.node_runtime._bootstrap_import",
+            "comfyui_to_python.runtime.module_loader._bootstrap_import",
             side_effect=counting_import,
         ):
             _discover_comfyui_cli_options()
@@ -204,7 +208,7 @@ class TestDiscoverComfyuiCliOptions(unittest.TestCase):
         from comfyui_to_python.node_runtime import _discover_comfyui_cli_options
 
         with patch(
-            "comfyui_to_python.node_runtime._bootstrap_import",
+            "comfyui_to_python.runtime.module_loader._bootstrap_import",
             return_value=type("FakeMod", (), {})(),
         ):
             known, value_taking = _discover_comfyui_cli_options()
@@ -227,7 +231,7 @@ class TestDiscoverComfyuiCliOptions(unittest.TestCase):
                 break
 
         with patch(
-            "comfyui_to_python.node_runtime._bootstrap_import",
+            "comfyui_to_python.runtime.module_loader._bootstrap_import",
             return_value=type("FakeMod", (), {"parser": mock_parser})(),
         ):
             known, _ = _discover_comfyui_cli_options()
@@ -239,9 +243,11 @@ class TestFilterComfyuiArgs(unittest.TestCase):
 
     def setUp(self):
         import comfyui_to_python.node_runtime as rt
+        from comfyui_to_python.runtime import bootstrap as bs
 
         self._original_cache = rt._DISCOVERED_OPTIONS
-        # Pre-populate cache so filter doesn't try to import ComfyUI
+        # Pre-populate cache so filter doesn't try to import ComfyUI.
+        # Set on BOTH node_runtime (re-export) and bootstrap (actual storage).
         rt._DISCOVERED_OPTIONS = (
             frozenset(
                 [
@@ -262,11 +268,14 @@ class TestFilterComfyuiArgs(unittest.TestCase):
                 ]
             ),
         )
+        bs._DISCOVERED_OPTIONS = rt._DISCOVERED_OPTIONS
 
     def tearDown(self):
         import comfyui_to_python.node_runtime as rt
+        from comfyui_to_python.runtime import bootstrap as bs
 
         rt._DISCOVERED_OPTIONS = self._original_cache
+        bs._DISCOVERED_OPTIONS = self._original_cache
 
     def test_preserves_known_flags(self):
         """Known ComfyUI flags like --cpu are preserved."""
