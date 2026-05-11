@@ -188,39 +188,199 @@ def _load_module_temp(module_name: str, filepath: str) -> Any:
     return mod
 
 
+def _bootstrap_import(module_name: str) -> Any:
+    """Import a ComfyUI module using normal import machinery.
+
+    Uses __import__() so namespace packages (e.g. comfy/) resolve correctly.
+    The module remains cached in sys.modules so later re-imports by ComfyUI's
+    internal chain reuse the same instance (including parsed CLI args).
+    """
+    # Ensure parent namespace exists for dotted names
+    parts = module_name.split(".")
+    for i in range(1, len(parts)):
+        parent = ".".join(parts[:i])
+        if parent not in sys.modules:
+            __import__(parent)
+    return __import__(module_name, fromlist=[""])
+
+
+def _filter_comfyui_args(argv: list[str]) -> list[str]:
+    """Filter sys.argv to keep only ComfyUI-recognized CLI arguments.
+
+    When bootstrap runs inside a subprocess (e.g. test runner), sys.argv may
+    contain flags that aren't valid for ComfyUI's argparse. This filters them
+    out so the import doesn't crash while still preserving --cpu and other
+    ComfyUI flags passed by the user.
+    """
+    _RECOGNIZED = frozenset(
+        {
+            "--cpu",
+            "--cpu-vae",
+            "--gpu-only",
+            "--highvram",
+            "--normalvram",
+            "--lowvram",
+            "--novram",
+            "--reserve-vram",
+            "--async-offload",
+            "--disable-async-offload",
+            "--disable-dynamic-vram",
+            "--enable-dynamic-vram",
+            "--force-non-blocking",
+            "--default-hashing-function",
+            "--disable-smart-memory",
+            "--deterministic",
+            "--fast",
+            "--disable-pinned-memory",
+            "--mmap-torch-files",
+            "--disable-mmap",
+            "--dont-print-server",
+            "--quick-test-for-ci",
+            "--windows-standalone-build",
+            "--disable-metadata",
+            "--disable-all-custom-nodes",
+            "--whitelist-custom-nodes",
+            "--disable-api-nodes",
+            "--multi-user",
+            "--verbose",
+            "--log-stdout",
+            "--front-end-version",
+            "--front-end-root",
+            "--user-directory",
+            "--enable-compress-response-body",
+            "--comfy-api-base",
+            "--database-url",
+            "--enable-assets",
+            "--cache-classic",
+            "--cache-lru",
+            "--cache-none",
+            "--cache-ram",
+            "--use-split-cross-attention",
+            "--use-quad-cross-attention",
+            "--use-pytorch-cross-attention",
+            "--use-sage-attention",
+            "--use-flash-attention",
+            "--disable-xformers",
+            "--force-upcast-attention",
+            "--dont-upcast-attention",
+            "--enable-manager",
+            "--disable-manager-ui",
+            "--enable-manager-legacy-ui",
+            "--directml",
+            "--oneapi-device-selector",
+            "--disable-ipex-optimize",
+            "--supports-fp8-compute",
+            "--preview-method",
+            "--preview-size",
+            "--cuda-device",
+            "--default-device",
+        }
+    )
+    result = [argv[0]] if argv else []
+    i = 1
+    while i < len(argv):
+        token = argv[i]
+        if token in _RECOGNIZED or token.startswith("--cuda-device="):
+            result.append(token)
+            # Skip the next arg if this flag expects a value and isn't boolean
+            if (
+                not token.startswith("--disable-")
+                and not token.startswith("--enable-")
+                and token
+                not in {
+                    "--cpu",
+                    "--cpu-vae",
+                    "--gpu-only",
+                    "--highvram",
+                    "--normalvram",
+                    "--lowvram",
+                    "--novram",
+                    "--force-non-blocking",
+                    "--disable-pinned-memory",
+                    "--mmap-torch-files",
+                    "--disable-mmap",
+                    "--dont-print-server",
+                    "--quick-test-for-ci",
+                    "--windows-standalone-build",
+                    "--disable-metadata",
+                    "--disable-all-custom-nodes",
+                    "--disable-api-nodes",
+                    "--multi-user",
+                    "--log-stdout",
+                    "--enable-compress-response-body",
+                    "--deterministic",
+                    "--disable-xformers",
+                    "--force-upcast-attention",
+                    "--dont-upcast-attention",
+                    "--enable-manager",
+                    "--disable-manager-ui",
+                    "--enable-manager-legacy-ui",
+                    "--cache-classic",
+                    "--use-split-cross-attention",
+                    "--use-quad-cross-attention",
+                    "--use-pytorch-cross-attention",
+                    "--use-sage-attention",
+                    "--use-flash-attention",
+                    "--disable-ipex-optimize",
+                    "--supports-fp8-compute",
+                }
+            ):
+                i += 1
+        elif token.startswith("--"):
+            # Unknown flag — skip it and its value
+            if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
+                i += 1
+        else:
+            # Positional arg — keep it
+            result.append(token)
+        i += 1
+    return result
+
+
 def bootstrap_comfyui_runtime() -> None:
-    """Mirror the allocator-related ComfyUI startup steps before torch import."""
+    """Mirror the allocator-related ComfyUI startup steps before torch import.
+
+    Uses normal imports so that parsed CLI args (e.g. --cpu) persist in
+    sys.modules and are reused when ComfyUI's internal chain later imports
+    comfy.cli_args and comfy.options.
+    """
     add_comfyui_directory_to_sys_path()
     comfyui_path = get_comfyui_path()
     if comfyui_path is None:
         log.debug("bootstrap_comfyui_runtime: ComfyUI path not found")
         return
 
-    # Load comfy.options under its canonical name so that enable_args_parsing()
-    # mutates the sys.modules["comfy.options"] cache entry. When cli_args.py
-    # later imports comfy.options by canonical name, it sees the mutation.
-    options_mod = _load_module(
-        "comfy.options", os.path.join(comfyui_path, "comfy", "options.py")
-    )
+    # Filter sys.argv to keep only ComfyUI-recognized flags. This prevents
+    # argparse crashes when bootstrap runs inside a subprocess (e.g. test
+    # runner) where sys.argv contains non-ComfyUI arguments.
+    original_argv = sys.argv
+    sys.argv = _filter_comfyui_args(sys.argv)
+
+    # Load via normal import (namespace-package safe) and keep in sys.modules
+    # so parsed CLI args persist for the full runtime lifecycle.
+    options_mod = _bootstrap_import("comfy.options")
     if options_mod is not None:
         options_mod.enable_args_parsing()
 
-    # cli_args imports comfy.options — so it must be cached under canonical name
-    # at this point. We remove both from sys.modules only after cli_args has
-    # loaded and consumed the args value, to prevent conflicts with later normal
-    # import chains (e.g. nodes.py -> comfy.cli_args).
-    cli_args_mod = _load_module(
-        "comfy.cli_args", os.path.join(comfyui_path, "comfy", "cli_args.py")
-    )
+    cli_args_mod = _bootstrap_import("comfy.cli_args")
 
+    # Restore original argv so that downstream code sees what was actually passed
+    sys.argv = original_argv
     args = getattr(cli_args_mod, "args", None) if cli_args_mod else None
 
-    # Now safe to remove bootstrap copies — args value already captured.
-    sys.modules.pop("comfy.options", None)
-    sys.modules.pop("comfy.cli_args", None)
+    # If the user didn't pass --cpu but CUDA is unavailable (no GPU/driver),
+    # force CPU mode so model_management doesn't crash on CUDA init.
+    if args is not None and not args.cpu:
+        try:
+            import torch as _torch
 
-    if args is None:
-        return
+            if not _torch.cuda.is_available():
+                args.cpu = True
+        except Exception:
+            pass  # If we can't check, let ComfyUI handle the error
+
+    # Modules stay in sys.modules so parsed CLI args (e.g. --cpu) persist when
+    # ComfyUI's internal chain reuses the cached cli_args module.
 
     if os.name == "nt":
         os.environ["MIMALLOC_PURGE_DELAY"] = "0"
@@ -355,6 +515,11 @@ def import_custom_nodes() -> None:
 def get_node_class_mappings() -> dict:
     """Load ComfyUI node mappings on demand via _load_module().
 
+    Calls bootstrap_comfyui_runtime() first so that CLI args (e.g. --cpu)
+    are parsed and cached in sys.modules before nodes.py triggers the
+    comfy.cli_args import chain. This prevents CUDA init crashes on
+    systems without a GPU.
+
     Reuses the cached "nodes" module from sys.modules if already loaded
     (e.g. by import_custom_nodes) to avoid resetting NODE_CLASS_MAPPINGS.
     """
@@ -363,6 +528,10 @@ def get_node_class_mappings() -> dict:
     if comfyui_path is None:
         log.debug("get_node_class_mappings: ComfyUI path not found")
         return {}
+
+    # Ensure bootstrap has run so that parsed CLI args are cached in
+    # sys.modules before nodes.py triggers the comfy import chain.
+    bootstrap_comfyui_runtime()
 
     # Reuse cached module if already loaded to avoid resetting mappings.
     nodes_mod = sys.modules.get("nodes")

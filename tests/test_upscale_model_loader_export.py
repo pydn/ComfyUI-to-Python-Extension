@@ -146,10 +146,10 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
 
         self.assertIn("def bootstrap_comfyui_runtime()", generated)
         self.assertIn("def cleanup_comfyui_runtime(", generated)
-        # Hardened imports use _load_module_temp() with temporary names,
-        # not bare 'import comfy.options' — avoids sys.modules pollution
-        self.assertIn("_load_module_temp", generated)
-        self.assertIn("options.py", generated)
+        # Bootstrap uses normal imports (_bootstrap_import) with enable_args_parsing,
+        # keeping parsed CLI args cached in sys.modules for the full runtime lifecycle.
+        self.assertIn("_bootstrap_import", generated)
+        self.assertIn("comfy.options", generated)
         self.assertIn("enable_args_parsing()", generated)
         self.assertIn("cuda_malloc.py", generated)
         self.assertNotIn("\nbootstrap_comfyui_runtime()\n", generated)

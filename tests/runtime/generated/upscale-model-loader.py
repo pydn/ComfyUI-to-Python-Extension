@@ -10,18 +10,190 @@ from typing import Sequence, Mapping, Any, Union
 log = logging.getLogger(__name__)
 
 
-def _find_from_extension_location() -> str | None:
-    """Walk up from this file's location to find ComfyUI root."""
-    ext_dir = os.path.dirname(os.path.realpath(__file__))
-    candidate = ext_dir
-    for _ in range(10):
+def _bootstrap_import(module_name: str) -> Any:
+    """Import a ComfyUI module using normal import machinery.
+
+    Uses __import__() so namespace packages (e.g. comfy/) resolve correctly.
+    The module remains cached in sys.modules so later re-imports by ComfyUI's
+    internal chain reuse the same instance (including parsed CLI args).
+    """
+    # Ensure parent namespace exists for dotted names
+    parts = module_name.split(".")
+    for i in range(1, len(parts)):
+        parent = ".".join(parts[:i])
+        if parent not in sys.modules:
+            __import__(parent)
+    return __import__(module_name, fromlist=[""])
+
+
+def _filter_comfyui_args(argv: list[str]) -> list[str]:
+    """Filter sys.argv to keep only ComfyUI-recognized CLI arguments.
+
+    When bootstrap runs inside a subprocess (e.g. test runner), sys.argv may
+    contain flags that aren't valid for ComfyUI's argparse. This filters them
+    out so the import doesn't crash while still preserving --cpu and other
+    ComfyUI flags passed by the user.
+    """
+    _RECOGNIZED = frozenset(
+        {
+            "--cpu",
+            "--cpu-vae",
+            "--gpu-only",
+            "--highvram",
+            "--normalvram",
+            "--lowvram",
+            "--novram",
+            "--reserve-vram",
+            "--async-offload",
+            "--disable-async-offload",
+            "--disable-dynamic-vram",
+            "--enable-dynamic-vram",
+            "--force-non-blocking",
+            "--default-hashing-function",
+            "--disable-smart-memory",
+            "--deterministic",
+            "--fast",
+            "--disable-pinned-memory",
+            "--mmap-torch-files",
+            "--disable-mmap",
+            "--dont-print-server",
+            "--quick-test-for-ci",
+            "--windows-standalone-build",
+            "--disable-metadata",
+            "--disable-all-custom-nodes",
+            "--whitelist-custom-nodes",
+            "--disable-api-nodes",
+            "--multi-user",
+            "--verbose",
+            "--log-stdout",
+            "--front-end-version",
+            "--front-end-root",
+            "--user-directory",
+            "--enable-compress-response-body",
+            "--comfy-api-base",
+            "--database-url",
+            "--enable-assets",
+            "--cache-classic",
+            "--cache-lru",
+            "--cache-none",
+            "--cache-ram",
+            "--use-split-cross-attention",
+            "--use-quad-cross-attention",
+            "--use-pytorch-cross-attention",
+            "--use-sage-attention",
+            "--use-flash-attention",
+            "--disable-xformers",
+            "--force-upcast-attention",
+            "--dont-upcast-attention",
+            "--enable-manager",
+            "--disable-manager-ui",
+            "--enable-manager-legacy-ui",
+            "--directml",
+            "--oneapi-device-selector",
+            "--disable-ipex-optimize",
+            "--supports-fp8-compute",
+            "--preview-method",
+            "--preview-size",
+            "--cuda-device",
+            "--default-device",
+        }
+    )
+    result = [argv[0]] if argv else []
+    i = 1
+    while i < len(argv):
+        token = argv[i]
+        if token in _RECOGNIZED or token.startswith("--cuda-device="):
+            result.append(token)
+            # Skip the next arg if this flag expects a value and isn't boolean
+            if (
+                not token.startswith("--disable-")
+                and not token.startswith("--enable-")
+                and token
+                not in {
+                    "--cpu",
+                    "--cpu-vae",
+                    "--gpu-only",
+                    "--highvram",
+                    "--normalvram",
+                    "--lowvram",
+                    "--novram",
+                    "--force-non-blocking",
+                    "--disable-pinned-memory",
+                    "--mmap-torch-files",
+                    "--disable-mmap",
+                    "--dont-print-server",
+                    "--quick-test-for-ci",
+                    "--windows-standalone-build",
+                    "--disable-metadata",
+                    "--disable-all-custom-nodes",
+                    "--disable-api-nodes",
+                    "--multi-user",
+                    "--log-stdout",
+                    "--enable-compress-response-body",
+                    "--deterministic",
+                    "--disable-xformers",
+                    "--force-upcast-attention",
+                    "--dont-upcast-attention",
+                    "--enable-manager",
+                    "--disable-manager-ui",
+                    "--enable-manager-legacy-ui",
+                    "--cache-classic",
+                    "--use-split-cross-attention",
+                    "--use-quad-cross-attention",
+                    "--use-pytorch-cross-attention",
+                    "--use-sage-attention",
+                    "--use-flash-attention",
+                    "--disable-ipex-optimize",
+                    "--supports-fp8-compute",
+                }
+            ):
+                i += 1
+        elif token.startswith("--"):
+            # Unknown flag — skip it and its value
+            if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
+                i += 1
+        else:
+            # Positional arg — keep it
+            result.append(token)
+        i += 1
+    return result
+
+
+def _find_file(name: str, max_depth: int = 20) -> str | None:
+    """Walk up from CWD to find a file by name.
+
+    Unlike find_path() which searches for directories, this checks
+    os.path.isfile() at each level. Returns full path to the file or None.
+
+    Checks CWD first before walking upward.
+    """
+    candidate = os.getcwd()
+    for _ in range(max_depth):
+        filepath = os.path.join(candidate, name)
+        if os.path.isfile(filepath):
+            return filepath
         parent = os.path.dirname(candidate)
         if parent == candidate:
             break
         candidate = parent
+    return None
+
+
+def _find_from_extension_location() -> str | None:
+    """Walk up from this file's location to find ComfyUI root.
+
+    Checks the starting directory first before walking upward.
+    """
+    ext_dir = os.path.dirname(os.path.realpath(__file__))
+    candidate = ext_dir
+    for _ in range(10):
         if os.path.basename(candidate) == "ComfyUI":
             if _is_comfyui_directory(candidate):
                 return candidate
+        parent = os.path.dirname(candidate)
+        if parent == candidate:
+            break
+        candidate = parent
     return None
 
 
@@ -86,12 +258,17 @@ def _load_module_temp(module_name: str, filepath: str) -> Any:
 
 
 def add_comfyui_directory_to_sys_path() -> None:
-    """Add the ComfyUI checkout to sys.path (idempotent — insert-once, no gap)."""
+    """Add the ComfyUI checkout to sys.path (idempotent — always at index 0).
+
+    If already present but lower in sys.path, removes and re-inserts at front
+    so bare imports always resolve to this copy first.
+    """
     comfyui_path = get_comfyui_path()
     if comfyui_path is not None and os.path.isdir(comfyui_path):
-        if comfyui_path not in sys.path:
-            sys.path.insert(0, comfyui_path)
-            log.debug("Added %s to sys.path", comfyui_path)
+        if comfyui_path in sys.path:
+            sys.path.remove(comfyui_path)
+        sys.path.insert(0, comfyui_path)
+        log.debug("Added %s to sys.path[0]", comfyui_path)
 
 
 def add_extra_model_paths() -> None:
@@ -117,7 +294,7 @@ def add_extra_model_paths() -> None:
             return
         load_extra_path_config = getattr(extra_config_mod, "load_extra_path_config")
 
-    extra_model_paths = find_path("extra_model_paths.yaml")
+    extra_model_paths = _find_file("extra_model_paths.yaml")
     if extra_model_paths is not None:
         load_extra_path_config(extra_model_paths)
     else:
@@ -125,30 +302,49 @@ def add_extra_model_paths() -> None:
 
 
 def bootstrap_comfyui_runtime() -> None:
-    """Mirror the allocator-related ComfyUI startup steps before torch import."""
+    """Mirror the allocator-related ComfyUI startup steps before torch import.
+
+    Uses normal imports so that parsed CLI args (e.g. --cpu) persist in
+    sys.modules and are reused when ComfyUI's internal chain later imports
+    comfy.cli_args and comfy.options.
+    """
     add_comfyui_directory_to_sys_path()
     comfyui_path = get_comfyui_path()
     if comfyui_path is None:
         log.debug("bootstrap_comfyui_runtime: ComfyUI path not found")
         return
 
-    # Use _load_module for file-based isolation, but with temporary names so
-    # the modules are removed from sys.modules after reading values.
-    # This prevents conflicts when ComfyUI's internal import chain (e.g.
-    # nodes.py -> comfy.cli_args) later loads these modules normally.
-    options_mod = _load_module_temp(
-        "_bootstrap_options", os.path.join(comfyui_path, "comfy", "options.py")
-    )
+    # Filter sys.argv to keep only ComfyUI-recognized flags. This prevents
+    # argparse crashes when bootstrap runs inside a subprocess (e.g. test
+    # runner) where sys.argv contains non-ComfyUI arguments.
+    original_argv = sys.argv
+    sys.argv = _filter_comfyui_args(sys.argv)
+
+    # Load via normal import (namespace-package safe) and keep in sys.modules
+    # so parsed CLI args persist for the full runtime lifecycle.
+    options_mod = _bootstrap_import("comfy.options")
     if options_mod is not None:
         options_mod.enable_args_parsing()
 
-    cli_args_mod = _load_module_temp(
-        "_bootstrap_cli_args", os.path.join(comfyui_path, "comfy", "cli_args.py")
-    )
+    cli_args_mod = _bootstrap_import("comfy.cli_args")
+
+    # Restore original argv so that downstream code sees what was actually passed
+    sys.argv = original_argv
     args = getattr(cli_args_mod, "args", None) if cli_args_mod else None
 
-    if args is None:
-        return
+    # If the user didn't pass --cpu but CUDA is unavailable (no GPU/driver),
+    # force CPU mode so model_management doesn't crash on CUDA init.
+    if args is not None and not args.cpu:
+        try:
+            import torch as _torch
+
+            if not _torch.cuda.is_available():
+                args.cpu = True
+        except Exception:
+            pass  # If we can't check, let ComfyUI handle the error
+
+    # Modules stay in sys.modules so parsed CLI args (e.g. --cpu) persist when
+    # ComfyUI's internal chain reuses the cached cli_args module.
 
     if os.name == "nt":
         os.environ["MIMALLOC_PURGE_DELAY"] = "0"
@@ -227,17 +423,18 @@ def cleanup_comfyui_runtime(unload_models: bool | None = None) -> None:
 def find_path(name: str, max_depth: int = 20) -> str | None:
     """Iteratively walk up from CWD to find a directory by name.
 
-    Depth-limited to prevent slow startup on deep trees.
-    Each candidate verified by _is_comfyui_directory() at the caller.
+    Checks CWD first before walking upward. Depth-limited to prevent slow
+    startup on deep trees. Each candidate verified by _is_comfyui_directory()
+    at the caller.
     """
     candidate = os.getcwd()
     for _ in range(max_depth):
+        if os.path.basename(candidate) == name:
+            return candidate
         parent = os.path.dirname(candidate)
         if parent == candidate:
             break
         candidate = parent
-        if os.path.basename(candidate) == name:
-            return candidate
     return None
 
 
