@@ -188,22 +188,6 @@ def _load_module_temp(module_name: str, filepath: str) -> Any:
     return mod
 
 
-def _bootstrap_import(module_name: str) -> Any:
-    """Import a ComfyUI module using normal import machinery.
-
-    Uses __import__() so namespace packages (e.g. comfy/) resolve correctly.
-    The module remains cached in sys.modules so later re-imports by ComfyUI's
-    internal chain reuse the same instance (including parsed CLI args).
-    """
-    # Ensure parent namespace exists for dotted names
-    parts = module_name.split(".")
-    for i in range(1, len(parts)):
-        parent = ".".join(parts[:i])
-        if parent not in sys.modules:
-            __import__(parent)
-    return __import__(module_name, fromlist=[""])
-
-
 def _filter_comfyui_args(argv: list[str]) -> list[str]:
     """Filter sys.argv to keep only ComfyUI-recognized CLI arguments.
 
