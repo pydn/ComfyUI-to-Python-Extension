@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 
 class TestLoadModuleCachesInSysModules(unittest.TestCase):
-    """Tests for _load_module — verifies modules are cached in sys.modules."""
+    """Tests for _load_module - verifies modules are cached in sys.modules."""
 
     def tearDown(self):
         # Clean up test modules from sys.modules
@@ -49,7 +49,7 @@ class TestLoadModuleCachesInSysModules(unittest.TestCase):
             first = _load_module("comfy.cli_args", mod_file)
             first.parsed_flags.append("--cpu")  # Simulate args parsing
 
-            # Re-import (ComfyUI's internal chain) — must return same instance
+            # Re-import (ComfyUI's internal chain) - must return same instance
             second = _load_module("comfy.cli_args", mod_file)
 
         self.assertIs(first, second)
@@ -73,7 +73,7 @@ class TestLoadModuleCachesInSysModules(unittest.TestCase):
 
 
 class TestLoadModuleTempRemovesFromSysModules(unittest.TestCase):
-    """Tests for _load_module_temp — removes modules from sys.modules.
+    """Tests for _load_module_temp - removes modules from sys.modules.
 
     Documents why _bootstrap_import is preferred for options/cli_args:
     _load_module_temp removes the module so ComfyUI's chain re-imports fresh.
@@ -119,15 +119,154 @@ class TestLoadModuleTempRemovesFromSysModules(unittest.TestCase):
             mod1 = _load_module_temp("_test_temp_stale", mod_file)
             mod1.parsed_args.append("--cpu")
 
-            # Re-import (ComfyUI's internal chain) — gets FRESH instance, no args!
+            # Re-import (ComfyUI's internal chain) - gets FRESH instance, no args!
             mod2 = _load_module("_test_temp_stale", mod_file)
 
         self.assertIsNot(mod1, mod2)  # Different instances
         self.assertNotIn("--cpu", mod2.parsed_args)  # Args lost!
 
 
+class TestDiscoverComfyuiCliOptions(unittest.TestCase):
+    """Tests for _discover_comfyui_cli_options - dynamic parser inspection."""
+
+    def tearDown(self):
+        # Reset global cache so tests are isolated
+        import comfyui_to_python.node_runtime as rt
+
+        rt._DISCOVERED_OPTIONS = None
+
+    def test_returns_known_boolean_flags(self):
+        """Discovered options include known boolean flags like --cpu."""
+        from comfyui_to_python.node_runtime import _discover_comfyui_cli_options
+
+        # Force discovery to work even without ComfyUI by mocking parser
+        import argparse
+
+        mock_parser = argparse.ArgumentParser()
+        mock_parser.add_argument("--cpu", action="store_true")
+        mock_parser.add_argument("--lowvram", action="store_true")
+
+        with patch(
+            "comfyui_to_python.node_runtime._bootstrap_import",
+            return_value=type("FakeMod", (), {"parser": mock_parser})(),
+        ):
+            known, _ = _discover_comfyui_cli_options()
+        self.assertIn("--cpu", known)
+        self.assertIn("--lowvram", known)
+
+    def test_returns_value_taking_flags(self):
+        """Discovered value_taking set includes flags that take arguments."""
+        from comfyui_to_python.node_runtime import _discover_comfyui_cli_options
+
+        import argparse
+
+        mock_parser = argparse.ArgumentParser()
+        mock_parser.add_argument("--cpu", action="store_true")
+        mock_parser.add_argument("--reserve-vram", type=float)
+        mock_parser.add_argument("--cuda-device", type=int)
+
+        with patch(
+            "comfyui_to_python.node_runtime._bootstrap_import",
+            return_value=type("FakeMod", (), {"parser": mock_parser})(),
+        ):
+            known, value_taking = _discover_comfyui_cli_options()
+        self.assertIn("--reserve-vram", value_taking)
+        self.assertIn("--cuda-device", value_taking)
+        # --cpu is boolean (store_true), not in value_taking
+        self.assertNotIn("--cpu", value_taking)
+
+    def test_caches_result(self):
+        """Second call returns cached result without re-importing."""
+        from comfyui_to_python.node_runtime import _discover_comfyui_cli_options
+
+        import argparse
+
+        mock_parser = argparse.ArgumentParser()
+        mock_parser.add_argument("--cpu", action="store_true")
+
+        call_count = [0]
+
+        def counting_import(name):
+            call_count[0] += 1
+            return type("FakeMod", (), {"parser": mock_parser})()
+
+        with patch(
+            "comfyui_to_python.node_runtime._bootstrap_import",
+            side_effect=counting_import,
+        ):
+            _discover_comfyui_cli_options()
+            _discover_comfyui_cli_options()
+
+        self.assertEqual(call_count[0], 1, "Should only import once (cached)")
+
+    def test_returns_empty_when_no_parser(self):
+        """Returns empty sets when comfy.cli_args has no parser attribute."""
+        from comfyui_to_python.node_runtime import _discover_comfyui_cli_options
+
+        with patch(
+            "comfyui_to_python.node_runtime._bootstrap_import",
+            return_value=type("FakeMod", (), {})(),
+        ):
+            known, value_taking = _discover_comfyui_cli_options()
+        self.assertEqual(known, frozenset())
+        self.assertEqual(value_taking, frozenset())
+
+    def test_strips_bracket_defaults_from_option_names(self):
+        """Option names with inline defaults (e.g. '--listen [IP]') are stripped."""
+        from comfyui_to_python.node_runtime import _discover_comfyui_cli_options
+
+        import argparse
+
+        mock_parser = argparse.ArgumentParser()
+        mock_parser.add_argument("--listen", type=str, default="127.0.0.1")
+
+        # Manually add a bracket-style option string (as argparse shows in help)
+        for action in mock_parser._actions:
+            if "--listen" in action.option_strings:
+                action.option_strings = ["--listen"]
+                break
+
+        with patch(
+            "comfyui_to_python.node_runtime._bootstrap_import",
+            return_value=type("FakeMod", (), {"parser": mock_parser})(),
+        ):
+            known, _ = _discover_comfyui_cli_options()
+        self.assertIn("--listen", known)
+
+
 class TestFilterComfyuiArgs(unittest.TestCase):
-    """Tests for _filter_comfyui_args — strips non-ComfyUI flags from argv."""
+    """Tests for _filter_comfyui_args - strips non-ComfyUI flags from argv."""
+
+    def setUp(self):
+        import comfyui_to_python.node_runtime as rt
+
+        self._original_cache = rt._DISCOVERED_OPTIONS
+        # Pre-populate cache so filter doesn't try to import ComfyUI
+        rt._DISCOVERED_OPTIONS = (
+            frozenset(
+                [
+                    "--cpu",
+                    "--lowvram",
+                    "--reserve-vram",
+                    "--cuda-device",
+                    "--verbose",
+                    "--front-end-version",
+                ]
+            ),
+            frozenset(
+                [
+                    "--reserve-vram",
+                    "--cuda-device",
+                    "--verbose",
+                    "--front-end-version",
+                ]
+            ),
+        )
+
+    def tearDown(self):
+        import comfyui_to_python.node_runtime as rt
+
+        rt._DISCOVERED_OPTIONS = self._original_cache
 
     def test_preserves_known_flags(self):
         """Known ComfyUI flags like --cpu are preserved."""
@@ -159,6 +298,13 @@ class TestFilterComfyuiArgs(unittest.TestCase):
         result = _filter_comfyui_args(["script.py", "--reserve-vram", "4096"])
         self.assertEqual(result, ["script.py", "--reserve-vram", "4096"])
 
+    def test_preserves_inline_flag_values(self):
+        """Flags with inline values (--flag=value) are preserved as-is."""
+        from comfyui_to_python.generator.generated_helpers import _filter_comfyui_args
+
+        result = _filter_comfyui_args(["script.py", "--cuda-device=0"])
+        self.assertEqual(result, ["script.py", "--cuda-device=0"])
+
     def test_handles_empty_argv(self):
         """Empty argv returns empty result."""
         from comfyui_to_python.generator.generated_helpers import _filter_comfyui_args
@@ -179,6 +325,30 @@ class TestFilterComfyuiArgs(unittest.TestCase):
 
         result = _filter_comfyui_args(["script.py", "--cpu", "output.png"])
         self.assertEqual(result, ["script.py", "--cpu", "output.png"])
+
+    def test_strips_single_char_flags(self):
+        """Single-char flags (e.g. -v from pytest) are stripped."""
+        from comfyui_to_python.generator.generated_helpers import _filter_comfyui_args
+
+        result = _filter_comfyui_args(["script.py", "-v", "--cpu", "-x", "--lowvram"])
+        self.assertEqual(result, ["script.py", "--cpu", "--lowvram"])
+
+    def test_mixed_known_and_unknown(self):
+        """Mix of known, unknown, and single-char flags is correctly filtered."""
+        from comfyui_to_python.generator.generated_helpers import _filter_comfyui_args
+
+        result = _filter_comfyui_args(
+            [
+                "script.py",
+                "--cpu",
+                "-s",
+                "--unknown-thing",
+                "foo",
+                "--reserve-vram",
+                "8",
+            ]
+        )
+        self.assertEqual(result, ["script.py", "--cpu", "--reserve-vram", "8"])
 
 
 class TestBootstrapUsesBootstrapImport(unittest.TestCase):
@@ -229,6 +399,7 @@ class TestGeneratedScriptEmbedsBootstrap(unittest.TestCase):
         generated = renderer.render(plan)
 
         self.assertIn("_filter_comfyui_args", generated)
+        self.assertIn("_discover_comfyui_cli_options", generated)
         self.assertIn("sys.argv = _filter_comfyui_args(sys.argv)", generated)
 
     def test_generated_script_filters_argv_before_bootstrap(self):

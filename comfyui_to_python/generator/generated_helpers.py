@@ -1,5 +1,6 @@
 from ..node_runtime import (
     _bootstrap_import,
+    _discover_comfyui_cli_options,
     _filter_comfyui_args,
     _find_file,
     _find_from_extension_location,
@@ -17,6 +18,7 @@ from ..node_runtime import (
 
 __all__ = [
     "_bootstrap_import",
+    "_discover_comfyui_cli_options",
     "_filter_comfyui_args",
     "_find_file",
     "_find_from_extension_location",
