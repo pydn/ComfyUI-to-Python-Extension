@@ -40,15 +40,19 @@ ln -s /path/to/ComfyUI-to-Python-Extension ComfyUI-to-Python-Extension
 Then install this extension into the same Python environment that launches ComfyUI.
 The `pyproject.toml` file declares the package dependencies, but those dependencies still need to be installed into ComfyUI's runtime Python.
 
-If you run ComfyUI from a source checkout with `uv`:
+#### From source checkout with `uv`
+
+If you run ComfyUI from a source checkout with `uv`, install its runtime dependencies and this extension in one step:
 
 ```bash
 cd /path/to/ComfyUI
-uv pip install -e ./custom_nodes/ComfyUI-to-Python-Extension
+uv pip install -r requirements.txt -e ./custom_nodes/ComfyUI-to-Python-Extension
 uv run python main.py
 ```
 
-If you use the Windows portable build:
+The `-r requirements.txt` installs ComfyUI's runtime dependencies (torch, etc.) and `-e ./custom_nodes/ComfyUI-to-Python-Extension` installs this extension in editable mode so code changes take effect on restart.
+
+#### Windows portable build
 
 ```
 cd C:\path\to\ComfyUI_windows_portable\ComfyUI\custom_nodes\ComfyUI-to-Python-Extension
