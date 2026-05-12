@@ -151,7 +151,7 @@ class TestDiscoverComfyuiCliOptions(unittest.TestCase):
         mock_parser.add_argument("--lowvram", action="store_true")
 
         with patch(
-            "comfyui_to_python.runtime.module_loader._bootstrap_import",
+            "comfyui_to_python.runtime.bootstrap._bootstrap_import",
             return_value=type("FakeMod", (), {"parser": mock_parser})(),
         ):
             known, _ = _discover_comfyui_cli_options()
@@ -170,7 +170,7 @@ class TestDiscoverComfyuiCliOptions(unittest.TestCase):
         mock_parser.add_argument("--cuda-device", type=int)
 
         with patch(
-            "comfyui_to_python.runtime.module_loader._bootstrap_import",
+            "comfyui_to_python.runtime.bootstrap._bootstrap_import",
             return_value=type("FakeMod", (), {"parser": mock_parser})(),
         ):
             known, value_taking = _discover_comfyui_cli_options()
@@ -195,7 +195,7 @@ class TestDiscoverComfyuiCliOptions(unittest.TestCase):
             return type("FakeMod", (), {"parser": mock_parser})()
 
         with patch(
-            "comfyui_to_python.runtime.module_loader._bootstrap_import",
+            "comfyui_to_python.runtime.bootstrap._bootstrap_import",
             side_effect=counting_import,
         ):
             _discover_comfyui_cli_options()
@@ -208,7 +208,7 @@ class TestDiscoverComfyuiCliOptions(unittest.TestCase):
         from comfyui_to_python.node_runtime import _discover_comfyui_cli_options
 
         with patch(
-            "comfyui_to_python.runtime.module_loader._bootstrap_import",
+            "comfyui_to_python.runtime.bootstrap._bootstrap_import",
             return_value=type("FakeMod", (), {})(),
         ):
             known, value_taking = _discover_comfyui_cli_options()
@@ -231,7 +231,7 @@ class TestDiscoverComfyuiCliOptions(unittest.TestCase):
                 break
 
         with patch(
-            "comfyui_to_python.runtime.module_loader._bootstrap_import",
+            "comfyui_to_python.runtime.bootstrap._bootstrap_import",
             return_value=type("FakeMod", (), {"parser": mock_parser})(),
         ):
             known, _ = _discover_comfyui_cli_options()

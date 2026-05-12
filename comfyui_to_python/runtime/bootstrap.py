@@ -16,6 +16,8 @@ import logging
 import sys
 from typing import Any
 
+from .module_loader import _bootstrap_import
+
 log = logging.getLogger(__name__)
 
 
@@ -49,10 +51,11 @@ def _discover_comfyui_cli_options() -> tuple[frozenset[str], frozenset[str]]:
     # Temporarily replace argv to parse with safe defaults during discovery.
     original_argv = sys.argv
     pre_discovery_modules = set(sys.modules.keys())
+    # _bootstrap_import is provided by the embedding context:
+    # imported at module level in package usage, or embedded as a standalone
+    # function before this one in generated scripts (via inspect.getsource).
     try:
         sys.argv = ["_discover"]
-        from .module_loader import _bootstrap_import
-
         cli_args_mod = _bootstrap_import("comfy.cli_args")
     except ModuleNotFoundError:
         log.debug("comfy.cli_args not available for option discovery")
