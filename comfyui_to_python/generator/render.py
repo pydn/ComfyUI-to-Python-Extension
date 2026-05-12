@@ -6,7 +6,7 @@ from typing import Any
 import black
 
 from ..node_runtime import import_custom_nodes
-from . import generated_helpers
+from .embedded_modules import get_embedded_helpers
 from .model import GenerationPlan
 
 log = logging.getLogger(__name__)
@@ -24,22 +24,10 @@ class WorkflowRenderer:
                 {"workflow": plan.metadata_workflow_data}
             )
 
-        # Auto-discover helpers from generated_helpers.__all__ so new helpers
-        # are picked up without manually updating this list.
-        func_strings = []
-        for name in generated_helpers.__all__:
-            obj = getattr(generated_helpers, name, None)
-            if obj is None:
-                log.warning(
-                    "Helper '%s' missing from generated_helpers — skipping", name
-                )
-                continue
-            # _GENERATED_GLOBALS is a list of declaration strings (not a callable)
-            if name == "_GENERATED_GLOBALS":
-                for decl in obj:
-                    func_strings.append(decl)
-            else:
-                func_strings.append(f"\n{inspect.getsource(obj)}")
+        # Auto-discover all helpers from contributing runtime modules.
+        # Reads source files, strips imports, embeds definitions — so internal
+        # cross-calls always resolve (no NameError from missing __all__ entries).
+        embedded_helpers = get_embedded_helpers()
 
         static_imports = [
             "# Imports",
@@ -53,7 +41,7 @@ class WorkflowRenderer:
             "from typing import Sequence, Mapping, Any, Union",
             "",
             "log = logging.getLogger(__name__)",
-        ] + func_strings
+        ] + [embedded_helpers]
 
         if plan.custom_nodes:
             static_imports.append(f"\n{inspect.getsource(import_custom_nodes)}\n")

@@ -1,12 +1,7 @@
 """Regression tests for generated script standalone execution.
 
 Ensures that freshly-generated scripts can run as __main__ without
-failing on relative imports (from .module_loader, etc.) which have
-no package context when executed directly.
-
-See: bootstrap.py _discover_comfyui_cli_options() — the inline
-relative import was removed so that inspect.getsource()-embedded
-code works in generated standalone scripts.
+failing on relative imports or NameError from missing cross-references.
 """
 
 import re
@@ -19,41 +14,65 @@ import unittest
 class TestGeneratedScriptNoRelativeImports(unittest.TestCase):
     """Verify generated scripts contain no relative imports with dots."""
 
-    def test_no_relative_imports_in_rendered_helpers(self):
-        """All embedded helper functions must be free of 'from .' imports.
+    def test_no_relative_imports_in_embedded_block(self):
+        """All embedded helpers must be free of 'from .' imports.
 
-        Generated scripts embed helpers via inspect.getsource() which captures
-        the full function body including any inner imports. Relative imports
-        (from .module_loader, from ..node_runtime) fail with ImportError when
-        the script runs as __main__ with no package context.
+        Generated scripts embed module bodies (imports stripped) rather than
+        individual functions. Any remaining relative import would fail with
+        ImportError when the script runs as __main__ with no package context.
         """
-        import inspect
-        from comfyui_to_python.generator import generated_helpers
+        from comfyui_to_python.generator.embedded_modules import get_embedded_helpers
 
-        relative_import_pattern = re.compile(r"^\s*from\s+\.\s*\w+")
-        offenders = []
-
-        for name in generated_helpers.__all__:
-            obj = getattr(generated_helpers, name, None)
-            if obj is None or name == "_GENERATED_GLOBALS":
-                continue
-            src = inspect.getsource(obj)
-            matches = relative_import_pattern.findall(src)
-            if matches:
-                offending_lines = [
-                    i + 1
-                    for i, line in enumerate(src.splitlines())
-                    if relative_import_pattern.search(line)
-                ]
-                offenders.append(
-                    f"{name}: {matches} at lines {offending_lines}"
-                )
+        embedded = get_embedded_helpers()
+        relative_import_pattern = re.compile(r"^\s*from\s+\.\s*")
+        matches = relative_import_pattern.findall(embedded)
 
         self.assertEqual(
-            offenders,
+            matches,
             [],
-            f"Found relative imports in embedded helpers:\n"
-            + "\n".join(f"  - {o}" for o in offenders),
+            f"Found {len(matches)} relative imports in embedded helpers",
+        )
+
+    def test_all_contributing_modules_embedded(self):
+        """Every contributing module is present in the embedded block.
+
+        If a new helper function is added to a runtime module but that module
+        isn't listed in _SOURCE_FILES, it won't be embedded and will cause
+        NameError at runtime. This test verifies all expected modules are included.
+        """
+        from comfyui_to_python.generator.embedded_modules import (
+            get_embedded_helpers,
+            list_embedded_names,
+        )
+
+        names = list_embedded_names()
+        embedded = get_embedded_helpers()
+
+        # All named functions must appear in the embedded block
+        for name in names:
+            self.assertIn(
+                f"def {name}(",
+                embedded,
+                f"Function '{name}' is listed but not found in embedded source",
+            )
+
+    def test_no_unresolved_cross_calls(self):
+        """All function calls within embedded code must resolve.
+
+        If a new internal helper is added to a runtime module and called by
+        an existing embedded function, it must also be embedded. This catches
+        the class of bug where _apply_device_settings was added but forgotten
+        from the embed list.
+        """
+        from comfyui_to_python.generator.embedded_modules import (
+            verify_no_missing_cross_calls,
+        )
+
+        unresolved = verify_no_missing_cross_calls()
+        self.assertEqual(
+            unresolved,
+            [],
+            f"Found unresolved cross-calls:\n" + "\n".join(f"  - {u}" for u in unresolved),
         )
 
     def test_no_relative_imports_in_full_rendered_script(self):
