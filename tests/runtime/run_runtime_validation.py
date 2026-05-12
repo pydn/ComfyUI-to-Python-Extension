@@ -3,6 +3,7 @@ import ast
 import json
 import os
 import shutil
+import signal
 import struct
 import subprocess
 import sys
@@ -320,9 +321,14 @@ def parse_args() -> argparse.Namespace:
         "--generated-path",
         help=argparse.SUPPRESS,
     )
+    parser.add_argument(
+        "--check-stale",
+        action="store_true",
+        help="Check if committed generated scripts match current generator output.",
+    )
     args = parser.parse_args()
-    if not args.internal_export and not args.tier:
-        parser.error("--tier is required unless --internal-export is used.")
+    if not args.internal_export and not args.tier and not args.check_stale:
+        parser.error("--tier or --check-stale is required unless --internal-export is used.")
     return args
 
 
@@ -581,7 +587,9 @@ def execute_generated_python(
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir) / f"{fixture.name}.py"
         tmp_path.write_text(generated_code, encoding="utf-8")
-        output_dir = Path(runtime_path) / COMFYUI_OUTPUT_DIRNAME
+        output_dir = Path(tmpdir) / "output"  # Writable temp dir for outputs
+        output_dir.mkdir(parents=True, exist_ok=True)
+
         # Compare against the pre-run snapshot so validation can prove this
         # execution created a fresh artifact instead of reusing an old output.
         existing_outputs = set(output_dir.glob("*.png"))
@@ -592,8 +600,10 @@ def execute_generated_python(
         ).rstrip(os.pathsep)
         runtime_python = get_runtime_python(runtime_path)
 
+        # Always pass --cpu so that model_management doesn't try CUDA init.
+        # Redirect output to a writable temp directory (avoids read-only FS errors).
         result = subprocess.run(
-            [runtime_python, str(tmp_path)],
+            [runtime_python, str(tmp_path), "--cpu", "--output-directory", str(output_dir)],
             cwd=ROOT,
             env=env,
             capture_output=True,
@@ -621,6 +631,18 @@ def execute_generated_python(
         output = stderr or stdout or "generated script exited with a non-zero status"
         lower_output = output.lower()
 
+        # Detect signal-based crashes (returncode > 128 means killed by signal)
+        if result.returncode > 128:
+            sig_num = result.returncode - 128
+            sig_name = signal.Signals(sig_num).name if sig_num in signal.Signals else f"SIG{sig_num}"
+            classification = "repo regression"
+            raise ValidationFailure(
+                classification,
+                f"Generated script for {fixture.name} was killed by signal {sig_name} ({result.returncode}). "
+                f"This usually indicates a segfault in CUDA/torch during bootstrap or import.\n"
+                f"stderr: {stderr}\nstdout: {stdout}",
+            )
+
         if "no module named 'torch'" in lower_output:
             classification = "environment/setup failure"
         elif "no such file or directory" in lower_output or "not found" in lower_output:
@@ -634,10 +656,127 @@ def execute_generated_python(
         )
 
 
+# --- Bootstrap-only smoke test script (injected into subprocess) ---
+# Injects --cpu so that the generated script's bootstrap phase never touches CUDA.
+# This isolates the test to import-order and module-lifecycle correctness.
+_BOOTSTRAP_SMOKETEST_SCRIPT = '''
+import sys
+sys.path.insert(0, {script_dir!r})
+
+# Force --cpu before importing so CLI arg parsing picks it up
+sys.argv = ["bootstrap_smoke_test", "--cpu"]
+
+# Import the generated script module so its module-level code runs
+import importlib.util
+spec = importlib.util.spec_from_file_location("test_generated", {script_path!r})
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+# Run only the bootstrap phase — no nodes, no models
+mod.bootstrap_comfyui_runtime()
+mod.add_extra_model_paths()
+
+print("BOOTSTRAP_OK")
+'''
+
+
+def validate_bootstrap(generated_code: str, fixture: FixtureConfig, runtime_path: str) -> None:
+    """Validate that the generated script's bootstrap phase doesn't crash.
+
+    This catches import-order bugs (e.g., premature CUDA initialization,
+    sys.modules corruption from load-and-discard cycles) WITHOUT needing
+    models, GPU, or a full workflow execution.
+
+    Runs in a subprocess so segfaults are caught as process exit codes
+    rather than killing the test runner.
+    """
+    if not fixture.runtime_capable:
+        return  # Only for runtime-capable fixtures
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        script_path = Path(tmpdir) / f"{fixture.name}.py"
+        script_path.write_text(generated_code, encoding="utf-8")
+
+        env = os.environ.copy()
+        env["COMFYUI_PATH"] = runtime_path
+        env["PYTHONPATH"] = os.pathsep.join(
+            [str(ROOT), env.get("PYTHONPATH", "")]
+        ).rstrip(os.pathsep)
+
+        runtime_python = get_runtime_python(runtime_path)
+
+        smoke_code = _BOOTSTRAP_SMOKETEST_SCRIPT.format(
+            script_dir=str(script_path.parent),
+            script_path=str(script_path),
+        )
+
+        result = subprocess.run(
+            [runtime_python, "-c", smoke_code],
+            cwd=tmpdir,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        # Check for signal-based crashes (segfault, etc.)
+        if result.returncode > 128:
+            sig_num = result.returncode - 128
+            sig_name = (
+                signal.Signals(sig_num).name
+                if sig_num in signal.Signals
+                else f"SIG{sig_num}"
+            )
+            raise ValidationFailure(
+                "repo regression",
+                f"Bootstrap smoke test for {fixture.name} was killed by {sig_name} ({result.returncode}). "
+                f"The generated script's import/bootstrap sequence corrupts runtime state.\n"
+                f"stderr: {result.stderr[:2000]}\nstdout: {result.stdout[:2000]}",
+            )
+
+        if result.returncode != 0:
+            stderr = (result.stderr or "").strip()
+            stdout = (result.stdout or "").strip()
+            output = stderr or stdout or "bootstrap subprocess exited with non-zero status"
+
+            # Classify common import failures
+            lower_output = output.lower()
+            if "no module named" in lower_output:
+                classification = "repo regression"
+            elif "segmentation fault" in lower_output:
+                classification = "repo regression"
+            else:
+                classification = "repo regression"
+
+            raise ValidationFailure(
+                classification,
+                f"Bootstrap smoke test for {fixture.name} failed (exit {result.returncode}).\n"
+                f"stderr: {stderr[:2000]}\nstdout: {stdout[:2000]}",
+            )
+
+        if "BOOTSTRAP_OK" not in result.stdout:
+            raise ValidationFailure(
+                "repo regression",
+                f"Bootstrap smoke test for {fixture.name} completed but did not emit BOOTSTRAP_OK marker.\n"
+                f"stdout: {result.stdout[:2000]}",
+            )
+
+
 def run_fixture(fixture: FixtureConfig, tier: str, execute: bool, runtime_path: str) -> str:
     if tier == "fast":
         _, generated_code = export_workflow(fixture, tier, runtime_path)
     else:
+        generated_code = export_workflow_in_runtime_env(fixture, runtime_path)
+
+    # Always validate syntax regardless of tier
+    validate_generated_python(generated_code, fixture.name)
+
+    if tier == "runtime":
+        # Bootstrap smoke test: validates import/bootstrap sequence doesn't crash
+        # (segfaults, module corruption, premature CUDA init) — runs WITHOUT models/GPU.
+        validate_bootstrap(generated_code, fixture, runtime_path)
+
+        # Full execution requires models + writable filesystem.
         missing_models = check_models(fixture, runtime_path)
         if missing_models:
             raise ValidationFailure(
@@ -648,17 +787,79 @@ def run_fixture(fixture: FixtureConfig, tier: str, execute: bool, runtime_path: 
                     f"{item.relative_dir}/{item.filename}" for item in missing_models
                 ),
             )
-        stage_inputs(fixture, runtime_path)
-        generated_code = export_workflow_in_runtime_env(fixture, runtime_path)
-    validate_generated_python(generated_code, fixture.name)
+        try:
+            stage_inputs(fixture, runtime_path)
+        except OSError as exc:
+            raise ValidationFailure(
+                "environment/setup failure",
+                f"Cannot stage inputs for {fixture.name}: {exc}",
+            ) from exc
 
-    # Fast keeps execution opt-in because its stub node mappings are intended for
-    # export coverage only. Runtime always executes the generated script.
-    should_execute = execute or tier == "runtime"
-    if should_execute and tier == "runtime":
+        # Runtime always executes the generated script end-to-end.
         execute_generated_python(generated_code, fixture, runtime_path)
 
     return "pass"
+
+
+def check_stale(runtime_path: str) -> int:
+    """Check if committed generated scripts match current generator output.
+
+    Regenerates each runtime-capable fixture using the ComfyUI runtime Python
+    (same as export_workflow_in_runtime_env) and diffs against the committed
+    file in tests/runtime/generated/. Returns 1 if any are stale, 0 if all match.
+    """
+    fixture_names = [name for name, cfg in FIXTURES.items() if cfg.runtime_capable]
+    stale_count = 0
+
+    for fixture_name in fixture_names:
+        fixture = FIXTURES[fixture_name]
+        committed_path = GENERATED_DIR / f"{fixture.name}.py"
+
+        if not committed_path.is_file():
+            print(f"{fixture.name}: missing (no committed file at {committed_path})")
+            stale_count += 1
+            continue
+
+        try:
+            regenerated_code = export_workflow_in_runtime_env(fixture, runtime_path)
+        except ValidationFailure as exc:
+            print(f"{fixture.name}: export error ({exc.message})")
+            stale_count += 1
+            continue
+        except Exception as exc:
+            print(f"{fixture.name}: export error ({exc})")
+            stale_count += 1
+            continue
+
+        current = committed_path.read_text(encoding="utf-8")
+
+        if current != regenerated_code:
+            # Show first differing region
+            current_lines = current.splitlines()
+            new_lines = regenerated_code.splitlines()
+            first_diff = ""
+            for i, (a, b) in enumerate(zip(current_lines, new_lines), 1):
+                if a != b:
+                    first_diff = f"\n  First diff at line {i}:\n    was: {a[:80]}\n    now: {b[:80]}"
+                    break
+            if not first_diff and len(current_lines) != len(new_lines):
+                first_diff = f"\n  Line count differs: {len(current_lines)} committed vs {len(new_lines)} regenerated"
+
+            print(f"{fixture.name}: stale (generator output changed){first_diff}")
+            stale_count += 1
+        else:
+            print(f"{fixture.name}: in-sync")
+
+    if stale_count:
+        print(
+            f"\n{stale_count} fixture(s) are stale. "
+            f"Regenerate: cd COMFYUI_ROOT && PYTHONPATH=EXT_PATH COMFYUI_PATH=. uv run python -c '...see AGENTS.md...'",
+            file=sys.stderr,
+        )
+    else:
+        print("All committed generated scripts match current generator output.")
+
+    return 1 if stale_count else 0
 
 
 def main() -> int:
@@ -667,13 +868,30 @@ def main() -> int:
     if args.internal_export:
         fixture = get_fixture(args.internal_export)
         output_path = Path(args.generated_path)
-        _, generated_code = export_workflow(
-            fixture=fixture,
-            tier="runtime",
-            runtime_path=os.environ.get("COMFYUI_PATH", ""),
-        )
+        # Set sys.argv with --cpu so that bootstrap_comfyui_runtime() parses
+        # CLI args correctly (avoids CUDA init during node discovery).
+        # Save original argv for potential debugging.
+        _orig_argv = list(sys.argv)
+        try:
+            sys.argv = ["internal-export", "--cpu"]
+            _, generated_code = export_workflow(
+                fixture=fixture,
+                tier="runtime",
+                runtime_path=os.environ.get("COMFYUI_PATH", ""),
+            )
+        finally:
+            sys.argv = _orig_argv
         output_path.write_text(generated_code, encoding="utf-8")
         return 0
+
+    if args.check_stale:
+        runtime_path = ensure_runtime_path("runtime")
+        try:
+            return check_stale(runtime_path)
+        except ValidationFailure as exc:
+            print(f"classification: {exc.classification}", file=sys.stderr)
+            print(exc.message, file=sys.stderr)
+            return 1
 
     try:
         runtime_path = ensure_runtime_path(args.tier)

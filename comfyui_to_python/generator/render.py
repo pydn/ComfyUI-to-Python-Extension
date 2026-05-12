@@ -31,6 +31,7 @@ class WorkflowRenderer:
 
         static_imports = [
             "# Imports",
+            "import gc",
             "import importlib.util",
             "import json",
             "import logging",

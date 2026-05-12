@@ -261,16 +261,18 @@ class RuntimeValidationHarnessTest(unittest.TestCase):
 
     @patch("tests.runtime.run_runtime_validation.get_runtime_python", return_value="/usr/bin/python")
     @patch("tests.runtime.run_runtime_validation.validate_output_artifact")
-    @patch("tests.runtime.run_runtime_validation.subprocess.run")
     def test_execute_generated_python_validates_newest_matching_artifact(
         self,
-        mock_run,
         mock_validate_output,
         _mock_runtime_python,
     ):
-        mock_run.return_value.returncode = 0
-        mock_run.return_value.stderr = ""
-        mock_run.return_value.stdout = ""
+        """Test that execute_generated_python finds the newest matching output file.
+
+        The side_effect extracts the --output-directory path from subprocess args
+        and writes artifacts there, so the test works regardless of internal temp dir handling.
+        """
+        import subprocess as _subprocess
+
         fixture = FixtureConfig(
             name="runtime-fixture",
             path=Path("unused.json"),
@@ -278,27 +280,32 @@ class RuntimeValidationHarnessTest(unittest.TestCase):
             filename_prefix="expected_prefix",
         )
 
+        result_mock = unittest.mock.MagicMock()
+        result_mock.returncode = 0
+        result_mock.stderr = ""
+        result_mock.stdout = ""
+
+        def _write_runtime_artifact(cmd, **_kwargs):
+            # Extract --output-directory from the command args
+            output_dir = None
+            for i, arg in enumerate(cmd):
+                if arg == "--output-directory" and i + 1 < len(cmd):
+                    output_dir = Path(cmd[i + 1])
+                    break
+            if output_dir is not None:
+                (output_dir / "expected_prefix_00002_.png").write_bytes(
+                    make_png_bytes(2, 2)
+                )
+            return result_mock
+
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_dir = Path(tmpdir) / "output"
-            output_dir.mkdir()
-            older = output_dir / "expected_prefix_00001_.png"
-            older.write_bytes(make_png_bytes(1, 1))
-            with patch(
-                "tests.runtime.run_runtime_validation.subprocess.run",
-                side_effect=self._write_runtime_artifact(mock_run.return_value, output_dir),
+            with unittest.mock.patch.object(
+                _subprocess, "run", side_effect=_write_runtime_artifact
             ):
                 execute_generated_python("print('hello')\n", fixture, tmpdir)
 
         validated_path = mock_validate_output.call_args[0][1]
         self.assertEqual(validated_path.name, "expected_prefix_00002_.png")
-
-    @staticmethod
-    def _write_runtime_artifact(result, output_dir: Path):
-        def side_effect(*_args, **_kwargs):
-            (output_dir / "expected_prefix_00002_.png").write_bytes(make_png_bytes(2, 2))
-            return result
-
-        return side_effect
 
 
 if __name__ == "__main__":

@@ -153,17 +153,6 @@ def bootstrap_comfyui_runtime() -> None:
     sys.argv = original_argv
     args = getattr(cli_args_mod, "args", None) if cli_args_mod else None
 
-    # If the user didn't pass --cpu but CUDA is unavailable (no GPU/driver),
-    # force CPU mode so model_management doesn't crash on CUDA init.
-    if args is not None and not args.cpu:
-        try:
-            import torch as _torch
-
-            if not _torch.cuda.is_available():
-                args.cpu = True
-        except Exception:
-            pass  # If we can't check, let ComfyUI handle the error
-
     if os.name == "nt":
         os.environ["MIMALLOC_PURGE_DELAY"] = "0"
 
