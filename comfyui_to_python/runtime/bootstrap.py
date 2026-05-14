@@ -14,17 +14,11 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Any
 
 from .module_loader import _bootstrap_import
 
 log = logging.getLogger(__name__)
 
-
-# Module-level globals that must appear in generated standalone scripts.
-_GENERATED_GLOBALS: list[str] = [
-    "_DISCOVERED_OPTIONS = None",
-]
 
 # Cache for discovered CLI options — populated once, reused thereafter.
 _DISCOVERED_OPTIONS: tuple[frozenset[str], frozenset[str]] | None = None

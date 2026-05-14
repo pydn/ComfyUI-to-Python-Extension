@@ -31,8 +31,21 @@ import sys
 import warnings
 from typing import Any, Mapping, Sequence, Union
 
-# ── Re-exports from runtime/path_discovery.py ────────────────────────────────
+# ── Re-exports from runtime/bootstrap.py ────────────────────────────────────
+from .runtime.bootstrap import (
+    _DISCOVERED_OPTIONS,
+    _discover_comfyui_cli_options,
+    _filter_comfyui_args,
+)
 
+# ── Re-exports from runtime/module_loader.py ────────────────────────────────
+from .runtime.module_loader import (
+    _bootstrap_import,
+    _load_module,
+    _load_module_temp,
+)
+
+# ── Re-exports from runtime/path_discovery.py ────────────────────────────────
 from .runtime.path_discovery import (
     _find_file,
     _find_from_extension_location,
@@ -41,24 +54,36 @@ from .runtime.path_discovery import (
     get_comfyui_path,
 )
 
-# ── Re-exports from runtime/module_loader.py ────────────────────────────────
-
-from .runtime.module_loader import (
-    _bootstrap_import,
-    _load_module,
-    _load_module_temp,
-)
-
-# ── Re-exports from runtime/bootstrap.py ────────────────────────────────────
-
-from .runtime.bootstrap import (
-    _DISCOVERED_OPTIONS,
-    _GENERATED_GLOBALS,
-    _discover_comfyui_cli_options,
-    _filter_comfyui_args,
-)
-
 log = logging.getLogger(__name__)
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+# Re-exported names for import from this module.
+# External code imports these from comfyui_to_python.node_runtime (not submodules).
+__all__: list[str] = [
+    # Path discovery
+    "_find_file",
+    "_find_from_extension_location",
+    "_is_comfyui_directory",
+    "add_comfyui_directory_to_sys_path",
+    "find_path",
+    "get_comfyui_path",
+    # Module loading
+    "_bootstrap_import",
+    "_load_module",
+    "_load_module_temp",
+    # Bootstrap / CLI
+    "_DISCOVERED_OPTIONS",
+    "_discover_comfyui_cli_options",
+    "_filter_comfyui_args",
+    # Public API
+    "add_extra_model_paths",
+    "bootstrap_comfyui_runtime",
+    "cleanup_comfyui_runtime",
+    "get_node_class_mappings",
+    "get_value_at_index",
+    "import_custom_nodes",
+]
 
 
 # ── Public API: sys.path management ─────────────────────────────────────────

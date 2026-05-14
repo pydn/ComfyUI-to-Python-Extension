@@ -287,11 +287,6 @@ the distinction between data analysis (this module) and runtime execution
 log = logging.getLogger(__name__)
 
 
-# Module-level globals that must appear in generated standalone scripts.
-_GENERATED_GLOBALS: list[str] = [
-    "_DISCOVERED_OPTIONS = None",
-]
-
 # Cache for discovered CLI options — populated once, reused thereafter.
 _DISCOVERED_OPTIONS: tuple[frozenset[str], frozenset[str]] | None = None
 
@@ -473,13 +468,39 @@ Public API (import from this module):
 Internal (prefixed with _): Available for embedding in generated scripts.
 """
 
-# ── Re-exports from runtime/path_discovery.py ────────────────────────────────
-
-# ── Re-exports from runtime/module_loader.py ────────────────────────────────
-
 # ── Re-exports from runtime/bootstrap.py ────────────────────────────────────
-
+# ── Re-exports from runtime/module_loader.py ────────────────────────────────
+# ── Re-exports from runtime/path_discovery.py ────────────────────────────────
 log = logging.getLogger(__name__)
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+# Re-exported names for import from this module.
+# External code imports these from comfyui_to_python.node_runtime (not submodules).
+__all__: list[str] = [
+    # Path discovery
+    "_find_file",
+    "_find_from_extension_location",
+    "_is_comfyui_directory",
+    "add_comfyui_directory_to_sys_path",
+    "find_path",
+    "get_comfyui_path",
+    # Module loading
+    "_bootstrap_import",
+    "_load_module",
+    "_load_module_temp",
+    # Bootstrap / CLI
+    "_DISCOVERED_OPTIONS",
+    "_discover_comfyui_cli_options",
+    "_filter_comfyui_args",
+    # Public API
+    "add_extra_model_paths",
+    "bootstrap_comfyui_runtime",
+    "cleanup_comfyui_runtime",
+    "get_node_class_mappings",
+    "get_value_at_index",
+    "import_custom_nodes",
+]
 
 
 # ── Public API: sys.path management ─────────────────────────────────────────
