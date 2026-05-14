@@ -230,28 +230,16 @@ def _apply_directory_overrides(args: Any) -> None:
     Redirects ComfyUI's default directories to user-specified paths,
     enabling operation when default mounts are read-only.
     """
-    if args.output_directory:
-        folder_paths_mod = _bootstrap_import("folder_paths")
-        if folder_paths_mod is not None and hasattr(
-            folder_paths_mod, "set_output_directory"
-        ):
-            folder_paths_mod.set_output_directory(
-                os.path.abspath(args.output_directory)
-            )
+    folder_paths_mod = _bootstrap_import("folder_paths")
+    if folder_paths_mod is None:
+        return
 
-    if args.input_directory:
-        folder_paths_mod = _bootstrap_import("folder_paths")
-        if folder_paths_mod is not None and hasattr(
-            folder_paths_mod, "set_input_directory"
-        ):
-            folder_paths_mod.set_input_directory(os.path.abspath(args.input_directory))
-
-    if args.user_directory:
-        folder_paths_mod = _bootstrap_import("folder_paths")
-        if folder_paths_mod is not None and hasattr(
-            folder_paths_mod, "set_user_directory"
-        ):
-            folder_paths_mod.set_user_directory(os.path.abspath(args.user_directory))
+    if args.output_directory and hasattr(folder_paths_mod, "set_output_directory"):
+        folder_paths_mod.set_output_directory(os.path.abspath(args.output_directory))
+    if args.input_directory and hasattr(folder_paths_mod, "set_input_directory"):
+        folder_paths_mod.set_input_directory(os.path.abspath(args.input_directory))
+    if args.user_directory and hasattr(folder_paths_mod, "set_user_directory"):
+        folder_paths_mod.set_user_directory(os.path.abspath(args.user_directory))
 
 
 # ── Public API: cleanup ─────────────────────────────────────────────────────

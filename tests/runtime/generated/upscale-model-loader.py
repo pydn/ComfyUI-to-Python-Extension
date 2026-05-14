@@ -56,15 +56,11 @@ def _load_module(module_name: str, filepath: str) -> Any:
             return None
         mod = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = mod
-        try:
-            spec.loader.exec_module(mod)
-        except BaseException:
-            sys.modules.pop(module_name, None)
-            raise
+        spec.loader.exec_module(mod)
         return mod
-    except BaseException as e:
-        log.debug("Failed to load %s from %s: %s", module_name, filepath, e)
-        sys.modules.pop(module_name, None)  # Also clean up on edge-case exceptions
+    except BaseException as exc:
+        log.debug("Failed to load %s from %s: %s", module_name, filepath, exc)
+        sys.modules.pop(module_name, None)
         return None
 
 
@@ -671,28 +667,16 @@ def _apply_directory_overrides(args: Any) -> None:
     Redirects ComfyUI's default directories to user-specified paths,
     enabling operation when default mounts are read-only.
     """
-    if args.output_directory:
-        folder_paths_mod = _bootstrap_import("folder_paths")
-        if folder_paths_mod is not None and hasattr(
-            folder_paths_mod, "set_output_directory"
-        ):
-            folder_paths_mod.set_output_directory(
-                os.path.abspath(args.output_directory)
-            )
+    folder_paths_mod = _bootstrap_import("folder_paths")
+    if folder_paths_mod is None:
+        return
 
-    if args.input_directory:
-        folder_paths_mod = _bootstrap_import("folder_paths")
-        if folder_paths_mod is not None and hasattr(
-            folder_paths_mod, "set_input_directory"
-        ):
-            folder_paths_mod.set_input_directory(os.path.abspath(args.input_directory))
-
-    if args.user_directory:
-        folder_paths_mod = _bootstrap_import("folder_paths")
-        if folder_paths_mod is not None and hasattr(
-            folder_paths_mod, "set_user_directory"
-        ):
-            folder_paths_mod.set_user_directory(os.path.abspath(args.user_directory))
+    if args.output_directory and hasattr(folder_paths_mod, "set_output_directory"):
+        folder_paths_mod.set_output_directory(os.path.abspath(args.output_directory))
+    if args.input_directory and hasattr(folder_paths_mod, "set_input_directory"):
+        folder_paths_mod.set_input_directory(os.path.abspath(args.input_directory))
+    if args.user_directory and hasattr(folder_paths_mod, "set_user_directory"):
+        folder_paths_mod.set_user_directory(os.path.abspath(args.user_directory))
 
 
 # ── Public API: cleanup ─────────────────────────────────────────────────────

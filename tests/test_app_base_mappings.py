@@ -150,7 +150,7 @@ class TestRenderHardenedImports(unittest.TestCase):
         self.assertIn("try:", generated)
         self.assertIn("spec.loader.exec_module(mod)", generated)
         self.assertIn(
-            "except BaseException:",
+            "except BaseException",
             generated,
             "Must catch BaseException for edge-case safety",
         )

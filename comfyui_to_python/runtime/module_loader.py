@@ -50,15 +50,11 @@ def _load_module(module_name: str, filepath: str) -> Any:
             return None
         mod = importlib.util.module_from_spec(spec)
         sys.modules[module_name] = mod
-        try:
-            spec.loader.exec_module(mod)
-        except BaseException:
-            sys.modules.pop(module_name, None)
-            raise
+        spec.loader.exec_module(mod)
         return mod
-    except BaseException as e:
-        log.debug("Failed to load %s from %s: %s", module_name, filepath, e)
-        sys.modules.pop(module_name, None)  # Also clean up on edge-case exceptions
+    except BaseException as exc:
+        log.debug("Failed to load %s from %s: %s", module_name, filepath, exc)
+        sys.modules.pop(module_name, None)
         return None
 
 
