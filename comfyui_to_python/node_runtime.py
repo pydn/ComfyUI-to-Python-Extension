@@ -303,6 +303,56 @@ def cleanup_comfyui_runtime(unload_models: bool | None = None) -> None:
 # ── Public API: custom nodes ────────────────────────────────────────────────
 
 
+def _load_custom_node_modules(
+    comfyui_path: str,
+) -> tuple[Any, Any, Any]:
+    """Load the three core ComfyUI modules for custom node initialization.
+
+    Loads execution.py, nodes.py, and server.py from the ComfyUI checkout.
+    Temporarily filters out comfy/ subdirectory from sys.path to prevent
+    import shadowing when loading server.py.
+
+    Args:
+        comfyui_path: Absolute path to the ComfyUI root directory.
+
+    Returns:
+        Tuple of (execution_mod, nodes_mod, server_mod). Any may be None
+        if the corresponding module could not be loaded.
+    """
+    execution_mod = _load_module(
+        "execution", os.path.join(comfyui_path, "execution.py")
+    )
+    nodes_mod = _load_module("nodes", os.path.join(comfyui_path, "nodes.py"))
+
+    # nodes.py inserts comfy/ subdirectory into sys.path, which shadows the
+    # top-level utils/ package (comfy/utils.py vs utils/). This breaks
+    # server.py → app.frontend_management → from utils.install_util import ...
+    # Filter it out temporarily so server.py loads cleanly.
+    comfy_subdir = os.path.join(comfyui_path, "comfy")
+    original_sys_path = list(sys.path)
+    sys.path[:] = [p for p in sys.path if p != comfy_subdir]
+
+    try:
+        server_mod = _load_module("server", os.path.join(comfyui_path, "server.py"))
+    finally:
+        # Restore sys.path so nodes and other modules that need comfy/ still work.
+        sys.path[:] = original_sys_path
+
+    return execution_mod, nodes_mod, server_mod
+
+
+def _init_extra_nodes(nodes_mod: Any) -> None:
+    """Call init_extra_nodes on the nodes module if available.
+
+    Args:
+        nodes_mod: The loaded nodes module (may be None).
+    """
+    import asyncio
+
+    if nodes_mod is not None and hasattr(nodes_mod, "init_extra_nodes"):
+        asyncio.run(nodes_mod.init_extra_nodes())
+
+
 def import_custom_nodes() -> None:
     """Initialize ComfyUI custom nodes in the exporter runtime.
 
@@ -324,41 +374,21 @@ def import_custom_nodes() -> None:
     if comfyui_path not in sys.path:
         sys.path.insert(0, comfyui_path)
 
-    execution_mod = _load_module(
-        "execution", os.path.join(comfyui_path, "execution.py")
-    )
-    nodes_mod = _load_module("nodes", os.path.join(comfyui_path, "nodes.py"))
-
-    # nodes.py inserts comfy/ subdirectory into sys.path, which shadows the
-    # top-level utils/ package (comfy/utils.py vs utils/). This breaks
-    # server.py → app.frontend_management → from utils.install_util import ...
-    # Filter it out temporarily so server.py loads cleanly.
-    comfy_subdir = os.path.join(comfyui_path, "comfy")
-    original_sys_path = list(sys.path)
-    sys.path[:] = [p for p in sys.path if p != comfy_subdir]
-
-    try:
-        server_mod = _load_module("server", os.path.join(comfyui_path, "server.py"))
-    finally:
-        # Restore sys.path so nodes and other modules that need comfy/ still work.
-        # Guaranteed even if _load_module raises mid-execution.
-        sys.path[:] = original_sys_path
+    execution_mod, nodes_mod, server_mod = _load_custom_node_modules(comfyui_path)
 
     if execution_mod is None or server_mod is None:
         log.debug(
             "import_custom_nodes: could not load execution/server modules. "
             "Proceeding without full PromptServer/PromptQueue setup."
         )
-        if nodes_mod is not None and hasattr(nodes_mod, "init_extra_nodes"):
-            asyncio.run(nodes_mod.init_extra_nodes())
+        _init_extra_nodes(nodes_mod)
         return
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     server_instance = server_mod.PromptServer(loop)
     execution_mod.PromptQueue(server_instance)
-    if nodes_mod is not None and hasattr(nodes_mod, "init_extra_nodes"):
-        asyncio.run(nodes_mod.init_extra_nodes())
+    _init_extra_nodes(nodes_mod)
 
 
 # ── Public API: node mappings ───────────────────────────────────────────────

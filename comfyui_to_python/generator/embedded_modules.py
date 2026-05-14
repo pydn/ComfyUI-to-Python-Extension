@@ -20,10 +20,10 @@ from typing import Any
 # Modules whose top-level definitions should be embedded in generated scripts.
 # Order matters: dependencies first, so functions are defined before callers reference them.
 _SOURCE_FILES: list[str] = [
-    "runtime/module_loader.py",   # _load_module, _bootstrap_import — no internal deps
+    "runtime/module_loader.py",  # _load_module, _bootstrap_import — no internal deps
     "runtime/path_discovery.py",  # get_comfyui_path, find_path, etc. — uses stdlib only
-    "runtime/bootstrap.py",       # _discover_cli_options, _filter_args — depends on module_loader
-    "node_runtime.py",            # public API facade + bootstrap/cleanup — imports from all above
+    "runtime/bootstrap.py",  # _discover_cli_options, _filter_args — depends on module_loader
+    "node_runtime.py",  # public API facade + bootstrap/cleanup — imports from all above
 ]
 
 
@@ -146,14 +146,36 @@ def verify_no_missing_cross_calls() -> list[str]:
     builtin_names = set(dir(_builtins))
 
     # Exception classes that are common in error handling
-    exception_names = {"Exception", "BaseException", "ValueError", "TypeError",
-                       "KeyError", "AttributeError", "ModuleNotFoundError",
-                       "ImportError", "FileNotFoundError", "RuntimeError",
-                       "StopIteration", "IndexError", "OSError"}
+    exception_names = {
+        "Exception",
+        "BaseException",
+        "ValueError",
+        "TypeError",
+        "KeyError",
+        "AttributeError",
+        "ModuleNotFoundError",
+        "ImportError",
+        "FileNotFoundError",
+        "RuntimeError",
+        "StopIteration",
+        "IndexError",
+        "OSError",
+    }
 
     # Type hint names from typing module
-    typing_names = {"Any", "Sequence", "Mapping", "Union", "Optional", "List",
-                    "Dict", "Set", "Tuple", "FrozenSet", "Callable"}
+    typing_names = {
+        "Any",
+        "Sequence",
+        "Mapping",
+        "Union",
+        "Optional",
+        "List",
+        "Dict",
+        "Set",
+        "Tuple",
+        "FrozenSet",
+        "Callable",
+    }
 
     all_known = builtin_names | exception_names | typing_names | embedded
     unresolved: list[str] = []

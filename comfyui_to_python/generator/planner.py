@@ -86,12 +86,13 @@ class WorkflowPlanner:
             }
 
             hidden_inputs = input_types.get("hidden", {})
-            if (
-                "unique_id" in hidden_inputs
-                and (no_params or "unique_id" in class_def_params)
+            if "unique_id" in hidden_inputs and (
+                no_params or "unique_id" in class_def_params
             ):
                 inputs["unique_id"] = random.randint(1, 2**64)
-            if "prompt" in hidden_inputs and (no_params or "prompt" in class_def_params):
+            if "prompt" in hidden_inputs and (
+                no_params or "prompt" in class_def_params
+            ):
                 inputs["prompt"] = {"variable_name": "prompt"}
             if "extra_pnginfo" in hidden_inputs and (
                 no_params or "extra_pnginfo" in class_def_params
@@ -163,9 +164,7 @@ class WorkflowPlanner:
         for key in ("seed", "noise_seed"):
             if key not in inputs:
                 continue
-            randomized_seed_variable = (
-                f"node_{self.sanitize_node_id(str(node_id))}_{self.clean_variable_name(key)}"
-            )
+            randomized_seed_variable = f"node_{self.sanitize_node_id(str(node_id))}_{self.clean_variable_name(key)}"
             randomized_seed_code = self.get_randomized_seed_code(
                 input_value_types.get(key)
             )
@@ -180,7 +179,9 @@ class WorkflowPlanner:
         indentation = "" if is_special_function else "\t"
         return [f"{indentation}{line}\n" for line in seed_sync_lines]
 
-    def format_arg(self, key: str, value: Any, input_value_type: str | None = None) -> str:
+    def format_arg(
+        self, key: str, value: Any, input_value_type: str | None = None
+    ) -> str:
         value_code = self.format_arg_value(key, value, input_value_type)
         if key.isidentifier() and not keyword.iskeyword(key):
             return f"{key}={value_code}"

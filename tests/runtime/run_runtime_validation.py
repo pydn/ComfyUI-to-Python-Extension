@@ -328,7 +328,9 @@ def parse_args() -> argparse.Namespace:
     )
     args = parser.parse_args()
     if not args.internal_export and not args.tier and not args.check_stale:
-        parser.error("--tier or --check-stale is required unless --internal-export is used.")
+        parser.error(
+            "--tier or --check-stale is required unless --internal-export is used."
+        )
     return args
 
 
@@ -603,7 +605,13 @@ def execute_generated_python(
         # Always pass --cpu so that model_management doesn't try CUDA init.
         # Redirect output to a writable temp directory (avoids read-only FS errors).
         result = subprocess.run(
-            [runtime_python, str(tmp_path), "--cpu", "--output-directory", str(output_dir)],
+            [
+                runtime_python,
+                str(tmp_path),
+                "--cpu",
+                "--output-directory",
+                str(output_dir),
+            ],
             cwd=ROOT,
             env=env,
             capture_output=True,
@@ -634,7 +642,11 @@ def execute_generated_python(
         # Detect signal-based crashes (returncode > 128 means killed by signal)
         if result.returncode > 128:
             sig_num = result.returncode - 128
-            sig_name = signal.Signals(sig_num).name if sig_num in signal.Signals else f"SIG{sig_num}"
+            sig_name = (
+                signal.Signals(sig_num).name
+                if sig_num in signal.Signals
+                else f"SIG{sig_num}"
+            )
             classification = "repo regression"
             raise ValidationFailure(
                 classification,
@@ -659,7 +671,7 @@ def execute_generated_python(
 # --- Bootstrap-only smoke test script (injected into subprocess) ---
 # Injects --cpu so that the generated script's bootstrap phase never touches CUDA.
 # This isolates the test to import-order and module-lifecycle correctness.
-_BOOTSTRAP_SMOKETEST_SCRIPT = '''
+_BOOTSTRAP_SMOKETEST_SCRIPT = """
 import sys
 sys.path.insert(0, {script_dir!r})
 
@@ -677,10 +689,12 @@ mod.bootstrap_comfyui_runtime()
 mod.add_extra_model_paths()
 
 print("BOOTSTRAP_OK")
-'''
+"""
 
 
-def validate_bootstrap(generated_code: str, fixture: FixtureConfig, runtime_path: str) -> None:
+def validate_bootstrap(
+    generated_code: str, fixture: FixtureConfig, runtime_path: str
+) -> None:
     """Validate that the generated script's bootstrap phase doesn't crash.
 
     This catches import-order bugs (e.g., premature CUDA initialization,
@@ -737,7 +751,9 @@ def validate_bootstrap(generated_code: str, fixture: FixtureConfig, runtime_path
         if result.returncode != 0:
             stderr = (result.stderr or "").strip()
             stdout = (result.stdout or "").strip()
-            output = stderr or stdout or "bootstrap subprocess exited with non-zero status"
+            output = (
+                stderr or stdout or "bootstrap subprocess exited with non-zero status"
+            )
 
             # Classify common import failures
             lower_output = output.lower()
@@ -762,7 +778,9 @@ def validate_bootstrap(generated_code: str, fixture: FixtureConfig, runtime_path
             )
 
 
-def run_fixture(fixture: FixtureConfig, tier: str, execute: bool, runtime_path: str) -> str:
+def run_fixture(
+    fixture: FixtureConfig, tier: str, execute: bool, runtime_path: str
+) -> str:
     if tier == "fast":
         _, generated_code = export_workflow(fixture, tier, runtime_path)
     else:

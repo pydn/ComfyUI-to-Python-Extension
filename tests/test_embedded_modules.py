@@ -20,21 +20,21 @@ class TestStripImports(unittest.TestCase):
         self._strip_imports = _strip_imports
 
     def test_removes_simple_imports(self):
-        source = 'import os\nimport sys\n\ndef foo(): pass'
+        source = "import os\nimport sys\n\ndef foo(): pass"
         result = self._strip_imports(source)
         self.assertNotIn("import os", result)
         self.assertNotIn("import sys", result)
         self.assertIn("def foo(): pass", result)
 
     def test_removes_from_imports(self):
-        source = 'from typing import Any\nfrom .runtime import x\n\ndef bar(): pass'
+        source = "from typing import Any\nfrom .runtime import x\n\ndef bar(): pass"
         result = self._strip_imports(source)
         self.assertNotIn("from typing", result)
         self.assertNotIn("from .runtime", result)
         self.assertIn("def bar(): pass", result)
 
     def test_removes_future_imports(self):
-        source = 'from __future__ import annotations\n\ndef baz(): pass'
+        source = "from __future__ import annotations\n\ndef baz(): pass"
         result = self._strip_imports(source)
         self.assertNotIn("__future__", result)
         self.assertIn("def baz(): pass", result)
@@ -46,13 +46,13 @@ class TestStripImports(unittest.TestCase):
         self.assertIn("Function docstring", result)
 
     def test_preserves_constants(self):
-        source = 'import os\n\nCONST = 42\n'
+        source = "import os\n\nCONST = 42\n"
         result = self._strip_imports(source)
         self.assertIn("CONST = 42", result)
         self.assertNotIn("import os", result)
 
     def test_removes_multiline_imports(self):
-        source = '''from typing import (\n    Any,\n    List,\n    Dict,\n)\ndef foo(): pass\n'''
+        source = """from typing import (\n    Any,\n    List,\n    Dict,\n)\ndef foo(): pass\n"""
         result = self._strip_imports(source)
         self.assertNotIn("from typing", result)
         self.assertNotIn("Any", result) or "Any" not in result.split("def")[0]
@@ -86,7 +86,8 @@ class TestGetEmbeddedHelpers(unittest.TestCase):
         result = self.get_embedded_helpers()
         tree = ast.parse(result)
         top_level_imports = [
-            node for node in ast.iter_child_nodes(tree)
+            node
+            for node in ast.iter_child_nodes(tree)
             if isinstance(node, (ast.Import, ast.ImportFrom))
         ]
         self.assertEqual(
@@ -119,6 +120,7 @@ class TestGetEmbeddedHelpers(unittest.TestCase):
 
     def test_no_relative_imports(self):
         import re
+
         result = self.get_embedded_helpers()
         matches = re.findall(r"^from\s+\.\s*", result, re.MULTILINE)
         self.assertEqual(
@@ -132,7 +134,8 @@ class TestGetEmbeddedHelpers(unittest.TestCase):
         result = self.get_embedded_helpers()
         for name in names:
             self.assertIn(
-                f"def {name}(", result,
+                f"def {name}(",
+                result,
                 f"list_embedded_names includes '{name}' but definition not found",
             )
 

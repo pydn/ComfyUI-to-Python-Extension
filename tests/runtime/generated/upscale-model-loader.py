@@ -291,6 +291,45 @@ log = logging.getLogger(__name__)
 _DISCOVERED_OPTIONS: tuple[frozenset[str], frozenset[str]] | None = None
 
 
+_EMPTY_OPTIONS: tuple[frozenset[str], frozenset[str]] = frozenset(), frozenset()
+
+
+def _parse_parser_actions(parser) -> tuple[set[str], set[str]]:
+    """Parse argparse actions into known options and value-taking subsets.
+
+    Inspects `parser._actions` to extract all recognized option strings and
+    which ones take values. This is the core parsing logic extracted from
+    _discover_comfyui_cli_options() for readability.
+
+    Args:
+        parser: An argparse.ArgumentParser instance with configured actions.
+
+    Returns:
+        Tuple of (known_options, value_taking_options) as sets.
+    """
+    known: set[str] = set()
+    value_taking: set[str] = set()
+    for action in parser._actions:
+        for opt in action.option_strings:
+            if not opt.startswith("--"):
+                continue
+            base = opt.split("[")[0].strip()
+            known.add(base)
+            nargs = getattr(action, "nargs", None)
+            # Skip boolean store_true/store_false actions — they don't take values
+            action_name = type(action).__name__
+            if action_name in ("_StoreTrueAction", "_StoreFalseAction"):
+                continue
+            if nargs is not None and nargs != 0:
+                value_taking.add(base)
+            elif hasattr(action, "const") and action.const is not None:
+                value_taking.add(base)
+            elif getattr(action, "type", None) is not None or nargs is None:
+                if action.dest != "help":
+                    value_taking.add(base)
+    return known, value_taking
+
+
 def _discover_comfyui_cli_options() -> tuple[frozenset[str], frozenset[str]]:
     """Dynamically discover CLI options from ComfyUI's argparse parser.
 
@@ -309,19 +348,15 @@ def _discover_comfyui_cli_options() -> tuple[frozenset[str], frozenset[str]]:
     if _DISCOVERED_OPTIONS is not None:
         return _DISCOVERED_OPTIONS
 
-    # Temporarily replace argv to parse with safe defaults during discovery.
     original_argv = sys.argv
     pre_discovery_modules = set(sys.modules.keys())
-    # _bootstrap_import is provided by the embedding context:
-    # imported at module level in package usage, or embedded as a standalone
-    # function before this one in generated scripts (via inspect.getsource).
     try:
         sys.argv = ["_discover"]
         cli_args_mod = _bootstrap_import("comfy.cli_args")
     except ModuleNotFoundError:
         log.debug("comfy.cli_args not available for option discovery")
         sys.argv = original_argv
-        _DISCOVERED_OPTIONS = frozenset(), frozenset()
+        _DISCOVERED_OPTIONS = _EMPTY_OPTIONS
         return _DISCOVERED_OPTIONS
     finally:
         sys.argv = original_argv
@@ -341,39 +376,34 @@ def _discover_comfyui_cli_options() -> tuple[frozenset[str], frozenset[str]]:
 
     if cli_args_mod is None:
         log.debug("bootstrap returned None for comfy.cli_args")
-        _DISCOVERED_OPTIONS = frozenset(), frozenset()
+        _DISCOVERED_OPTIONS = _EMPTY_OPTIONS
         return _DISCOVERED_OPTIONS
 
     parser = getattr(cli_args_mod, "parser", None)
     if parser is None:
         log.debug("Could not find parser in comfy.cli_args")
-        _DISCOVERED_OPTIONS = frozenset(), frozenset()
+        _DISCOVERED_OPTIONS = _EMPTY_OPTIONS
         return _DISCOVERED_OPTIONS
 
-    known: set[str] = set()
-    value_taking: set[str] = set()
-    for action in parser._actions:
-        for opt in action.option_strings:
-            if not opt.startswith("--"):
-                continue
-            # Strip inline default shown by argparse (e.g. '--listen [IP]')
-            base = opt.split("[")[0].strip()
-            known.add(base)
-            nargs = getattr(action, "nargs", None)
-            # Skip boolean store_true/store_false actions — they don't take values
-            action_name = type(action).__name__
-            if action_name in ("_StoreTrueAction", "_StoreFalseAction"):
-                continue
-            if nargs is not None and nargs != 0:
-                value_taking.add(base)
-            elif hasattr(action, "const") and action.const is not None:
-                value_taking.add(base)
-            elif getattr(action, "type", None) is not None or nargs is None:
-                if action.dest != "help":
-                    value_taking.add(base)
-
+    known, value_taking = _parse_parser_actions(parser)
     _DISCOVERED_OPTIONS = frozenset(known), frozenset(value_taking)
     return _DISCOVERED_OPTIONS
+
+
+def _get_base_option(token: str) -> str:
+    """Extract base option name from a CLI token.
+
+    Strips inline values from tokens like '--cuda-device=0' to get '--cuda-device'.
+
+    Args:
+        token: A CLI argument string (e.g., '--cuda-device=0' or '--cpu').
+
+    Returns:
+        Base option name without inline value.
+    """
+    if "=" in token:
+        return token.split("=")[0]
+    return token
 
 
 def _filter_comfyui_args(argv: list[str]) -> list[str]:
@@ -400,43 +430,37 @@ def _filter_comfyui_args(argv: list[str]) -> list[str]:
         Filtered list containing only recognized ComfyUI arguments.
     """
     known, value_taking = _discover_comfyui_cli_options()
-
-    # Extract base option from tokens like '--cuda-device=0'
-    def _base_option(token: str) -> str | None:
-        if "=" in token:
-            return token.split("=")[0]
-        return token
-
     result = [argv[0]] if argv else []
+
     i = 1
     while i < len(argv):
         token = argv[i]
+
         # Skip single-char flags (e.g. -v, -s from test runners)
         if token.startswith("-") and not token.startswith("--"):
             i += 1
             continue
-        base = _base_option(token)
+
+        base = _get_base_option(token)
+
         if base in known:
             result.append(token)
-            # If the option takes a value and it's not inline (=), consume next arg
+            # If option takes a value and it's not inline (=), consume next arg
             if base in value_taking and "=" not in token:
                 if i + 1 < len(argv):
                     next_token = argv[i + 1]
-                    # Safety check: don't consume a known option as a value
                     if (
                         next_token.startswith("--")
-                        and _base_option(next_token) in known
+                        and _get_base_option(next_token) in known
                     ):
                         pass  # Next token is itself a flag — don't consume it
                     elif not next_token.startswith("--"):
                         result.append(next_token)
                         i += 1
         elif token.startswith("--"):
-            # Unknown --flag — skip it (and its value if present)
             if i + 1 < len(argv) and not argv[i + 1].startswith("--"):
                 i += 1
         else:
-            # Positional arg — keep it
             result.append(token)
         i += 1
     return result
@@ -720,6 +744,56 @@ def cleanup_comfyui_runtime(unload_models: bool | None = None) -> None:
 # ── Public API: custom nodes ────────────────────────────────────────────────
 
 
+def _load_custom_node_modules(
+    comfyui_path: str,
+) -> tuple[Any, Any, Any]:
+    """Load the three core ComfyUI modules for custom node initialization.
+
+    Loads execution.py, nodes.py, and server.py from the ComfyUI checkout.
+    Temporarily filters out comfy/ subdirectory from sys.path to prevent
+    import shadowing when loading server.py.
+
+    Args:
+        comfyui_path: Absolute path to the ComfyUI root directory.
+
+    Returns:
+        Tuple of (execution_mod, nodes_mod, server_mod). Any may be None
+        if the corresponding module could not be loaded.
+    """
+    execution_mod = _load_module(
+        "execution", os.path.join(comfyui_path, "execution.py")
+    )
+    nodes_mod = _load_module("nodes", os.path.join(comfyui_path, "nodes.py"))
+
+    # nodes.py inserts comfy/ subdirectory into sys.path, which shadows the
+    # top-level utils/ package (comfy/utils.py vs utils/). This breaks
+    # server.py → app.frontend_management → from utils.install_util import ...
+    # Filter it out temporarily so server.py loads cleanly.
+    comfy_subdir = os.path.join(comfyui_path, "comfy")
+    original_sys_path = list(sys.path)
+    sys.path[:] = [p for p in sys.path if p != comfy_subdir]
+
+    try:
+        server_mod = _load_module("server", os.path.join(comfyui_path, "server.py"))
+    finally:
+        # Restore sys.path so nodes and other modules that need comfy/ still work.
+        sys.path[:] = original_sys_path
+
+    return execution_mod, nodes_mod, server_mod
+
+
+def _init_extra_nodes(nodes_mod: Any) -> None:
+    """Call init_extra_nodes on the nodes module if available.
+
+    Args:
+        nodes_mod: The loaded nodes module (may be None).
+    """
+    import asyncio
+
+    if nodes_mod is not None and hasattr(nodes_mod, "init_extra_nodes"):
+        asyncio.run(nodes_mod.init_extra_nodes())
+
+
 def import_custom_nodes() -> None:
     """Initialize ComfyUI custom nodes in the exporter runtime.
 
@@ -741,41 +815,21 @@ def import_custom_nodes() -> None:
     if comfyui_path not in sys.path:
         sys.path.insert(0, comfyui_path)
 
-    execution_mod = _load_module(
-        "execution", os.path.join(comfyui_path, "execution.py")
-    )
-    nodes_mod = _load_module("nodes", os.path.join(comfyui_path, "nodes.py"))
-
-    # nodes.py inserts comfy/ subdirectory into sys.path, which shadows the
-    # top-level utils/ package (comfy/utils.py vs utils/). This breaks
-    # server.py → app.frontend_management → from utils.install_util import ...
-    # Filter it out temporarily so server.py loads cleanly.
-    comfy_subdir = os.path.join(comfyui_path, "comfy")
-    original_sys_path = list(sys.path)
-    sys.path[:] = [p for p in sys.path if p != comfy_subdir]
-
-    try:
-        server_mod = _load_module("server", os.path.join(comfyui_path, "server.py"))
-    finally:
-        # Restore sys.path so nodes and other modules that need comfy/ still work.
-        # Guaranteed even if _load_module raises mid-execution.
-        sys.path[:] = original_sys_path
+    execution_mod, nodes_mod, server_mod = _load_custom_node_modules(comfyui_path)
 
     if execution_mod is None or server_mod is None:
         log.debug(
             "import_custom_nodes: could not load execution/server modules. "
             "Proceeding without full PromptServer/PromptQueue setup."
         )
-        if nodes_mod is not None and hasattr(nodes_mod, "init_extra_nodes"):
-            asyncio.run(nodes_mod.init_extra_nodes())
+        _init_extra_nodes(nodes_mod)
         return
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     server_instance = server_mod.PromptServer(loop)
     execution_mod.PromptQueue(server_instance)
-    if nodes_mod is not None and hasattr(nodes_mod, "init_extra_nodes"):
-        asyncio.run(nodes_mod.init_extra_nodes())
+    _init_extra_nodes(nodes_mod)
 
 
 # ── Public API: node mappings ───────────────────────────────────────────────
@@ -858,41 +912,21 @@ def import_custom_nodes() -> None:
     if comfyui_path not in sys.path:
         sys.path.insert(0, comfyui_path)
 
-    execution_mod = _load_module(
-        "execution", os.path.join(comfyui_path, "execution.py")
-    )
-    nodes_mod = _load_module("nodes", os.path.join(comfyui_path, "nodes.py"))
-
-    # nodes.py inserts comfy/ subdirectory into sys.path, which shadows the
-    # top-level utils/ package (comfy/utils.py vs utils/). This breaks
-    # server.py → app.frontend_management → from utils.install_util import ...
-    # Filter it out temporarily so server.py loads cleanly.
-    comfy_subdir = os.path.join(comfyui_path, "comfy")
-    original_sys_path = list(sys.path)
-    sys.path[:] = [p for p in sys.path if p != comfy_subdir]
-
-    try:
-        server_mod = _load_module("server", os.path.join(comfyui_path, "server.py"))
-    finally:
-        # Restore sys.path so nodes and other modules that need comfy/ still work.
-        # Guaranteed even if _load_module raises mid-execution.
-        sys.path[:] = original_sys_path
+    execution_mod, nodes_mod, server_mod = _load_custom_node_modules(comfyui_path)
 
     if execution_mod is None or server_mod is None:
         log.debug(
             "import_custom_nodes: could not load execution/server modules. "
             "Proceeding without full PromptServer/PromptQueue setup."
         )
-        if nodes_mod is not None and hasattr(nodes_mod, "init_extra_nodes"):
-            asyncio.run(nodes_mod.init_extra_nodes())
+        _init_extra_nodes(nodes_mod)
         return
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     server_instance = server_mod.PromptServer(loop)
     execution_mod.PromptQueue(server_instance)
-    if nodes_mod is not None and hasattr(nodes_mod, "init_extra_nodes"):
-        asyncio.run(nodes_mod.init_extra_nodes())
+    _init_extra_nodes(nodes_mod)
 
 
 # Workflow data

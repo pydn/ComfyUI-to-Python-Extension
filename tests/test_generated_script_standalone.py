@@ -72,7 +72,8 @@ class TestGeneratedScriptNoRelativeImports(unittest.TestCase):
         self.assertEqual(
             unresolved,
             [],
-            f"Found unresolved cross-calls:\n" + "\n".join(f"  - {u}" for u in unresolved),
+            f"Found unresolved cross-calls:\n"
+            + "\n".join(f"  - {u}" for u in unresolved),
         )
 
     def test_no_relative_imports_in_full_rendered_script(self):
@@ -133,9 +134,7 @@ class TestGeneratedScriptNoRelativeImports(unittest.TestCase):
         renderer = WorkflowRenderer()
         generated = renderer.render(plan)
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".py", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(generated)
             tmp_path = f.name
 

@@ -25,12 +25,7 @@ def make_png_bytes(
 ) -> bytes:
     def chunk(chunk_type: bytes, data: bytes) -> bytes:
         crc = zlib.crc32(chunk_type + data) & 0xFFFFFFFF
-        return (
-            struct.pack(">I", len(data))
-            + chunk_type
-            + data
-            + struct.pack(">I", crc)
-        )
+        return struct.pack(">I", len(data)) + chunk_type + data + struct.pack(">I", crc)
 
     ihdr = chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
     text_chunks = text_chunks or []
@@ -76,7 +71,9 @@ class RuntimeValidationHarnessTest(unittest.TestCase):
             ensure_runtime_path("runtime")
 
         self.assertEqual(context.exception.classification, "environment/setup failure")
-        self.assertIn("Could not find a valid ComfyUI checkout", context.exception.message)
+        self.assertIn(
+            "Could not find a valid ComfyUI checkout", context.exception.message
+        )
 
     def test_check_models_returns_only_missing_requirements(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -165,7 +162,10 @@ class RuntimeValidationHarnessTest(unittest.TestCase):
         self.assertEqual(context.exception.classification, "environment/setup failure")
         self.assertIn("Could not read PNG dimensions", context.exception.message)
 
-    @patch("tests.runtime.run_runtime_validation.get_runtime_python", return_value="/usr/bin/python")
+    @patch(
+        "tests.runtime.run_runtime_validation.get_runtime_python",
+        return_value="/usr/bin/python",
+    )
     @patch("tests.runtime.run_runtime_validation.subprocess.run")
     def test_execute_generated_python_classifies_missing_torch_as_environment_failure(
         self,
@@ -188,7 +188,10 @@ class RuntimeValidationHarnessTest(unittest.TestCase):
 
         self.assertEqual(context.exception.classification, "environment/setup failure")
 
-    @patch("tests.runtime.run_runtime_validation.get_runtime_python", return_value="/usr/bin/python")
+    @patch(
+        "tests.runtime.run_runtime_validation.get_runtime_python",
+        return_value="/usr/bin/python",
+    )
     @patch("tests.runtime.run_runtime_validation.subprocess.run")
     def test_execute_generated_python_classifies_missing_files_as_environment_failure(
         self,
@@ -211,7 +214,10 @@ class RuntimeValidationHarnessTest(unittest.TestCase):
 
         self.assertEqual(context.exception.classification, "environment/setup failure")
 
-    @patch("tests.runtime.run_runtime_validation.get_runtime_python", return_value="/usr/bin/python")
+    @patch(
+        "tests.runtime.run_runtime_validation.get_runtime_python",
+        return_value="/usr/bin/python",
+    )
     @patch("tests.runtime.run_runtime_validation.subprocess.run")
     def test_execute_generated_python_classifies_other_failures_as_repo_regression(
         self,
@@ -234,7 +240,10 @@ class RuntimeValidationHarnessTest(unittest.TestCase):
 
         self.assertEqual(context.exception.classification, "repo regression")
 
-    @patch("tests.runtime.run_runtime_validation.get_runtime_python", return_value="/usr/bin/python")
+    @patch(
+        "tests.runtime.run_runtime_validation.get_runtime_python",
+        return_value="/usr/bin/python",
+    )
     @patch("tests.runtime.run_runtime_validation.subprocess.run")
     def test_execute_generated_python_requires_fresh_matching_artifact(
         self,
@@ -259,7 +268,10 @@ class RuntimeValidationHarnessTest(unittest.TestCase):
         self.assertEqual(context.exception.classification, "repo regression")
         self.assertIn("did not produce a new output file", context.exception.message)
 
-    @patch("tests.runtime.run_runtime_validation.get_runtime_python", return_value="/usr/bin/python")
+    @patch(
+        "tests.runtime.run_runtime_validation.get_runtime_python",
+        return_value="/usr/bin/python",
+    )
     @patch("tests.runtime.run_runtime_validation.validate_output_artifact")
     def test_execute_generated_python_validates_newest_matching_artifact(
         self,
