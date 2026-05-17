@@ -8,7 +8,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 class ProjectContractsTest(unittest.TestCase):
     def test_project_declares_supported_python_floor(self):
-        pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+        pyproject = tomllib.loads(
+            (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )
 
         self.assertEqual(pyproject["project"]["requires-python"], ">=3.12")
 
@@ -26,8 +28,11 @@ class ProjectContractsTest(unittest.TestCase):
         self.assertNotIn("Successfully installed. Hopefully, at least.", init_text)
 
     def test_frontend_save_flow_uses_deterministic_filename_without_prompt(self):
-        save_as_script = (REPO_ROOT / "js" / "save-as-script.js").read_text(encoding="utf-8")
+        save_as_script = (REPO_ROOT / "js" / "save-as-script.js").read_text(
+            encoding="utf-8"
+        )
 
-        self.assertIn('const DEFAULT_SCRIPT_FILENAME = "workflow_api.py";', save_as_script)
+        self.assertIn(
+            'const DEFAULT_SCRIPT_FILENAME = "workflow_api.py";', save_as_script
+        )
         self.assertNotIn("prompt(", save_as_script)
-

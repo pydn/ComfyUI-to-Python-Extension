@@ -17,13 +17,16 @@ class NodeRuntimeCleanupTest(unittest.TestCase):
         model_management.soft_empty_cache = Mock()
         comfy_module.model_management = model_management
 
-        with patch.dict(
-            sys.modules,
-            {
-                "comfy": comfy_module,
-                "comfy.model_management": model_management,
-            },
-        ), patch.dict("os.environ", {}, clear=False):
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "comfy": comfy_module,
+                    "comfy.model_management": model_management,
+                },
+            ),
+            patch.dict("os.environ", {}, clear=False),
+        ):
             cleanup_comfyui_runtime()
 
         model_management.cleanup_models_gc.assert_called_once_with()
@@ -39,16 +42,19 @@ class NodeRuntimeCleanupTest(unittest.TestCase):
         model_management.soft_empty_cache = Mock()
         comfy_module.model_management = model_management
 
-        with patch.dict(
-            sys.modules,
-            {
-                "comfy": comfy_module,
-                "comfy.model_management": model_management,
-            },
-        ), patch.dict(
-            "os.environ",
-            {"COMFYUI_TOPYTHON_UNLOAD_MODELS": "true"},
-            clear=False,
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "comfy": comfy_module,
+                    "comfy.model_management": model_management,
+                },
+            ),
+            patch.dict(
+                "os.environ",
+                {"COMFYUI_TOPYTHON_UNLOAD_MODELS": "true"},
+                clear=False,
+            ),
         ):
             cleanup_comfyui_runtime()
 
@@ -59,17 +65,24 @@ class NodeRuntimeCleanupTest(unittest.TestCase):
         comfy_module.__path__ = []
         model_management = types.ModuleType("comfy.model_management")
         model_management.cleanup_models_gc = Mock(side_effect=RuntimeError("gc failed"))
-        model_management.unload_all_models = Mock(side_effect=RuntimeError("unload failed"))
-        model_management.soft_empty_cache = Mock(side_effect=RuntimeError("cache failed"))
+        model_management.unload_all_models = Mock(
+            side_effect=RuntimeError("unload failed")
+        )
+        model_management.soft_empty_cache = Mock(
+            side_effect=RuntimeError("cache failed")
+        )
         comfy_module.model_management = model_management
 
-        with patch.dict(
-            sys.modules,
-            {
-                "comfy": comfy_module,
-                "comfy.model_management": model_management,
-            },
-        ), warnings.catch_warnings(record=True) as caught:
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "comfy": comfy_module,
+                    "comfy.model_management": model_management,
+                },
+            ),
+            warnings.catch_warnings(record=True) as caught,
+        ):
             warnings.simplefilter("always")
             cleanup_comfyui_runtime(unload_models=True)
 
@@ -90,17 +103,22 @@ class NodeRuntimeCleanupTest(unittest.TestCase):
         comfy_module = types.ModuleType("comfy")
         comfy_module.__path__ = []
         model_management = types.ModuleType("comfy.model_management")
-        model_management.cleanup_models_gc = Mock(side_effect=RuntimeError("cleanup failed"))
+        model_management.cleanup_models_gc = Mock(
+            side_effect=RuntimeError("cleanup failed")
+        )
         model_management.soft_empty_cache = Mock()
         comfy_module.model_management = model_management
 
-        with patch.dict(
-            sys.modules,
-            {
-                "comfy": comfy_module,
-                "comfy.model_management": model_management,
-            },
-        ), warnings.catch_warnings(record=True):
+        with (
+            patch.dict(
+                sys.modules,
+                {
+                    "comfy": comfy_module,
+                    "comfy.model_management": model_management,
+                },
+            ),
+            warnings.catch_warnings(record=True),
+        ):
             warnings.simplefilter("always")
             with self.assertRaisesRegex(ValueError, "workflow failed"):
                 try:

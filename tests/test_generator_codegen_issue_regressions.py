@@ -176,7 +176,9 @@ def export_workflow(workflow: dict, node_class_mappings: dict) -> str:
 
 
 class GeneratorCodegenIssueRegressionTest(unittest.TestCase):
-    def test_export_uses_dictionary_expansion_for_rgthree_symbol_heavy_input_names(self):
+    def test_export_uses_dictionary_expansion_for_rgthree_symbol_heavy_input_names(
+        self,
+    ):
         generated = export_workflow(
             load_fixture("unsafe-rgthree-kwargs.json"),
             {
@@ -187,7 +189,7 @@ class GeneratorCodegenIssueRegressionTest(unittest.TestCase):
         )
 
         self.assertIn(
-            'powerloraloaderrgthree_631 = powerloraloaderrgthree.load_loras(',
+            "powerloraloaderrgthree_631 = powerloraloaderrgthree.load_loras(",
             generated,
         )
         self.assertIn(
@@ -207,7 +209,9 @@ class GeneratorCodegenIssueRegressionTest(unittest.TestCase):
             },
         )
 
-        self.assertIn("upscalemodelloader_42_0 = upscalemodelloader.load_model(", generated)
+        self.assertIn(
+            "upscalemodelloader_42_0 = upscalemodelloader.load_model(", generated
+        )
         self.assertIn(
             "imageupscalewithmodel_42_1 = imageupscalewithmodel.upscale(",
             generated,
@@ -268,13 +272,13 @@ class GeneratorCodegenIssueRegressionTest(unittest.TestCase):
     def test_issue_cluster_regressions_render_parseable_python(self):
         workflows = [
             (
-                    load_fixture("unsafe-rgthree-kwargs.json"),
-                    {
-                        "AnySwitchRgthree": AnySwitchRgthree,
-                        "DualClipLoader": DualClipLoader,
-                        "PowerLoraLoaderRgthree": PowerLoraLoaderRgthree,
-                    },
-                ),
+                load_fixture("unsafe-rgthree-kwargs.json"),
+                {
+                    "AnySwitchRgthree": AnySwitchRgthree,
+                    "DualClipLoader": DualClipLoader,
+                    "PowerLoraLoaderRgthree": PowerLoraLoaderRgthree,
+                },
+            ),
             (
                 load_fixture("subgraph-upscaler-identifiers.json"),
                 {

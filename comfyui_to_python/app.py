@@ -1,4 +1,5 @@
 import copy
+import sys
 
 from typing import TextIO
 
@@ -57,7 +58,16 @@ class ExportApplication:
         }
         if self.needs_init_custom_nodes or missing_node_types:
             self.custom_node_importer()
-            self.base_node_class_mappings = copy.deepcopy(self.node_class_mappings)
+            # Re-read from the cached "nodes" module in sys.modules after
+            # import_custom_nodes() populates it with extras (comfy_extras,
+            # custom node directories, etc.). The original dict is a stale copy.
+            nodes_mod = sys.modules.get("nodes")
+            if nodes_mod is not None:
+                fresh_mappings = getattr(nodes_mod, "NODE_CLASS_MAPPINGS", {})
+                self.node_class_mappings = fresh_mappings
+            # Leave self.base_node_class_mappings unchanged — it represents the
+            # pre-custom-node baseline used by WorkflowPlanner to decide whether
+            # a node gets a direct import or a NODE_CLASS_MAPPINGS dict lookup.
 
         load_order = LoadOrderDeterminer(
             data, self.node_class_mappings

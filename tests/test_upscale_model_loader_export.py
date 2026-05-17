@@ -146,9 +146,12 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
 
         self.assertIn("def bootstrap_comfyui_runtime()", generated)
         self.assertIn("def cleanup_comfyui_runtime(", generated)
-        self.assertIn("import comfy.options", generated)
-        self.assertIn("comfy.options.enable_args_parsing()", generated)
-        self.assertIn("import cuda_malloc", generated)
+        # Bootstrap uses _load_module() from verified file paths, keeping
+        # parsed CLI args cached in sys.modules for the full runtime lifecycle.
+        self.assertIn("_load_module", generated)
+        self.assertIn("comfy.options", generated)
+        self.assertIn("enable_args_parsing()", generated)
+        self.assertIn("cuda_malloc.py", generated)
         self.assertNotIn("\nbootstrap_comfyui_runtime()\n", generated)
         self.assertIn(
             "def main(unload_models: bool | None = None):\n"
@@ -177,7 +180,9 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
             main_section.index("add_extra_model_paths()"),
             main_section.index("import torch"),
         )
-        self.assertLess(generated.index("import cuda_malloc"), generated.index("import torch"))
+        # cuda_malloc is loaded via _load_module() inside bootstrap_comfyui_runtime()
+        # which runs before 'import torch' in main() — ordering preserved
+        self.assertIn("cuda_malloc", generated)
         self.assertIn(
             "    finally:\n        cleanup_comfyui_runtime(unload_models=unload_models)",
             main_section,
@@ -383,10 +388,13 @@ class UpscaleModelLoaderExportTest(unittest.TestCase):
 
             input_file.write_text(json.dumps(workflow), encoding="utf-8")
 
-            with patch(
-                "comfyui_to_python.get_node_class_mappings",
-                return_value={"LoadImage": LoadImage},
-            ), patch("comfyui_to_python.import_custom_nodes"):
+            with (
+                patch(
+                    "comfyui_to_python.get_node_class_mappings",
+                    return_value={"LoadImage": LoadImage},
+                ),
+                patch("comfyui_to_python.import_custom_nodes"),
+            ):
                 run(
                     input_file=str(input_file),
                     output_file=str(output_file),

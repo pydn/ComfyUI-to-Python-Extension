@@ -51,12 +51,7 @@ class WorkflowPlanner:
             input_value_types = self.get_input_value_types(input_types)
             class_def = self.node_class_mappings[class_type]()
 
-            missing_required_variable = False
-            if "required" in input_types.keys():
-                for required in input_types["required"]:
-                    if required not in inputs.keys():
-                        missing_required_variable = True
-            if missing_required_variable:
+            if self._node_has_missing_required_inputs(input_types, inputs):
                 continue
 
             if class_type not in initialized_objects:
@@ -85,21 +80,7 @@ class WorkflowPlanner:
                 if no_params or key in class_def_params
             }
 
-            hidden_inputs = input_types.get("hidden", {})
-            if (
-                "unique_id" in hidden_inputs
-                and (no_params or "unique_id" in class_def_params)
-            ):
-                inputs["unique_id"] = random.randint(1, 2**64)
-            if "prompt" in hidden_inputs and (no_params or "prompt" in class_def_params):
-                inputs["prompt"] = {"variable_name": "prompt"}
-            if "extra_pnginfo" in hidden_inputs and (
-                no_params or "extra_pnginfo" in class_def_params
-            ):
-                inputs["extra_pnginfo"] = {"variable_name": "extra_pnginfo"}
-            if "hidden" not in input_types and class_def_params is not None:
-                if "unique_id" in class_def_params:
-                    inputs["unique_id"] = random.randint(1, 2**64)
+            self._apply_hidden_inputs(inputs, input_types, class_def_params)
 
             executed_variables[idx] = (
                 f"{self.clean_variable_name(class_type)}_"
@@ -134,6 +115,34 @@ class WorkflowPlanner:
             custom_nodes=custom_nodes,
         )
 
+    @staticmethod
+    def _node_has_missing_required_inputs(input_types: dict, inputs: dict) -> bool:
+        """Return True when a node is missing any required input."""
+        return any(
+            required not in inputs for required in input_types.get("required", {})
+        )
+
+    @staticmethod
+    def _apply_hidden_inputs(
+        inputs: dict, input_types: dict, class_def_params: list | None
+    ) -> None:
+        """Inject ComfyUI hidden runtime inputs accepted by the node function."""
+        hidden_inputs = input_types.get("hidden", {})
+        no_params = class_def_params is None
+        if "unique_id" in hidden_inputs and (
+            no_params or "unique_id" in class_def_params
+        ):
+            inputs["unique_id"] = random.randint(1, 2**64)
+        if "prompt" in hidden_inputs and (no_params or "prompt" in class_def_params):
+            inputs["prompt"] = {"variable_name": "prompt"}
+        if "extra_pnginfo" in hidden_inputs and (
+            no_params or "extra_pnginfo" in class_def_params
+        ):
+            inputs["extra_pnginfo"] = {"variable_name": "extra_pnginfo"}
+        if "hidden" not in input_types and class_def_params is not None:
+            if "unique_id" in class_def_params:
+                inputs["unique_id"] = random.randint(1, 2**64)
+
     def create_function_call_code(
         self,
         obj_name: str,
@@ -164,13 +173,15 @@ class WorkflowPlanner:
             if key not in inputs:
                 continue
             randomized_seed_variable = (
-                f"node_{self.sanitize_node_id(str(node_id))}_{self.clean_variable_name(key)}"
+                f"node_{self.sanitize_node_id(str(node_id))}_"
+                f"{self.clean_variable_name(key)}"
             )
             randomized_seed_code = self.get_randomized_seed_code(
                 input_value_types.get(key)
             )
             seed_sync_lines.append(
-                f'{randomized_seed_variable} = prompt["{node_id}"]["inputs"]["{key}"] = {randomized_seed_code}'
+                f'{randomized_seed_variable} = prompt["{node_id}"]["inputs"]'
+                f'["{key}"] = {randomized_seed_code}'
             )
             inputs[key] = {"variable_name": randomized_seed_variable}
 
@@ -180,7 +191,9 @@ class WorkflowPlanner:
         indentation = "" if is_special_function else "\t"
         return [f"{indentation}{line}\n" for line in seed_sync_lines]
 
-    def format_arg(self, key: str, value: Any, input_value_type: str | None = None) -> str:
+    def format_arg(
+        self, key: str, value: Any, input_value_type: str | None = None
+    ) -> str:
         value_code = self.format_arg_value(key, value, input_value_type)
         if key.isidentifier() and not keyword.iskeyword(key):
             return f"{key}={value_code}"
@@ -255,7 +268,9 @@ class WorkflowPlanner:
                 isinstance(inputs[key], list)
                 and inputs[key][0] in executed_variables.keys()
             ):
-                inputs[key] = {
-                    "variable_name": f"get_value_at_index({executed_variables[inputs[key][0]]}, {inputs[key][1]})"
-                }
+                variable_name = (
+                    f"get_value_at_index({executed_variables[inputs[key][0]]}, "
+                    f"{inputs[key][1]})"
+                )
+                inputs[key] = {"variable_name": variable_name}
         return inputs
