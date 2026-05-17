@@ -19,6 +19,7 @@ FIXTURE_DIR = ROOT / "tests" / "fixtures" / "runtime"
 GENERATED_DIR = ROOT / "tests" / "runtime" / "generated"
 COMFYUI_OUTPUT_DIRNAME = "output"
 COMFYUI_INPUT_DIRNAME = "input"
+PINNED_RUNTIME_ROOT = Path("/opt/ComfyUI")
 
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -356,7 +357,19 @@ def ensure_runtime_path(tier: str) -> str:
             "parent directory contains ComfyUI.",
         )
 
-    return str(runtime_path)
+    return _ensure_pinned_runtime_path(runtime_path)
+
+
+def _ensure_pinned_runtime_path(runtime_path: str) -> str:
+    resolved_runtime = Path(runtime_path).resolve()
+    expected_runtime = PINNED_RUNTIME_ROOT.resolve()
+    if resolved_runtime != expected_runtime:
+        raise ValidationFailure(
+            "environment/setup failure",
+            "Runtime validation must use canonical /opt/ComfyUI. "
+            f"Resolved runtime path was {resolved_runtime}.",
+        )
+    return str(resolved_runtime)
 
 
 def get_runtime_python(runtime_path: str) -> str:

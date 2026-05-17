@@ -40,7 +40,13 @@ class TestStripImports(unittest.TestCase):
         self.assertIn("def baz(): pass", result)
 
     def test_preserves_docstrings(self):
-        source = '''"""Module docstring."""\nimport os\n\ndef foo():\n    """Function docstring."""\n    pass'''
+        source = (
+            '"""Module docstring."""\n'
+            "import os\n\n"
+            "def foo():\n"
+            '    """Function docstring."""\n'
+            "    pass"
+        )
         result = self._strip_imports(source)
         self.assertIn("Module docstring", result)
         self.assertIn("Function docstring", result)
@@ -52,7 +58,9 @@ class TestStripImports(unittest.TestCase):
         self.assertNotIn("import os", result)
 
     def test_removes_multiline_imports(self):
-        source = """from typing import (\n    Any,\n    List,\n    Dict,\n)\ndef foo(): pass\n"""
+        source = (
+            "from typing import (\n    Any,\n    List,\n    Dict,\n)\ndef foo(): pass\n"
+        )
         result = self._strip_imports(source)
         self.assertNotIn("from typing", result)
         self.assertNotIn("Any", result) or "Any" not in result.split("def")[0]
@@ -170,6 +178,15 @@ class TestListEmbeddedNames(unittest.TestCase):
         names = list_embedded_names()
         # 'log' is the logger instance — not useful to embed
         self.assertNotIn("log", names)
+
+    def test_surface_matches_approved_manifest(self):
+        from comfyui_to_python.generator.embedded_modules import (
+            verify_embedded_surface_matches_manifest,
+        )
+
+        differences = verify_embedded_surface_matches_manifest()
+
+        self.assertEqual(differences, [])
 
 
 class TestVerifyNoMissingCrossCalls(unittest.TestCase):

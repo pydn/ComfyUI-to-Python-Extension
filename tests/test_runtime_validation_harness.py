@@ -75,6 +75,18 @@ class RuntimeValidationHarnessTest(unittest.TestCase):
             "Could not find a valid ComfyUI checkout", context.exception.message
         )
 
+    def test_ensure_runtime_path_runtime_tier_requires_pinned_opt_comfyui(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch(
+                "tests.runtime.run_runtime_validation.get_comfyui_path",
+                return_value=tmpdir,
+            ):
+                with self.assertRaises(ValidationFailure) as context:
+                    ensure_runtime_path("runtime")
+
+        self.assertEqual(context.exception.classification, "environment/setup failure")
+        self.assertIn("/opt/ComfyUI", context.exception.message)
+
     def test_check_models_returns_only_missing_requirements(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             runtime_path = Path(tmpdir)
@@ -281,7 +293,8 @@ class RuntimeValidationHarnessTest(unittest.TestCase):
         """Test that execute_generated_python finds the newest matching output file.
 
         The side_effect extracts the --output-directory path from subprocess args
-        and writes artifacts there, so the test works regardless of internal temp dir handling.
+        and writes artifacts there, so the test works regardless of internal
+        temp dir handling.
         """
         import subprocess as _subprocess
 

@@ -14,17 +14,44 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import Any
-
 
 # Modules whose top-level definitions should be embedded in generated scripts.
-# Order matters: dependencies first, so functions are defined before callers reference them.
+# Order matters: dependencies first, so functions are defined before callers use them.
 _SOURCE_FILES: list[str] = [
     "runtime/module_loader.py",  # _load_module, _bootstrap_import — no internal deps
-    "runtime/path_discovery.py",  # get_comfyui_path, find_path, etc. — uses stdlib only
-    "runtime/bootstrap.py",  # _discover_cli_options, _filter_args — depends on module_loader
-    "node_runtime.py",  # public API facade + bootstrap/cleanup — imports from all above
+    "runtime/path_discovery.py",  # get_comfyui_path, find_path, etc.
+    "runtime/bootstrap.py",  # CLI filtering; depends on module_loader
+    "node_runtime.py",  # public API facade + bootstrap/cleanup
 ]
+
+
+APPROVED_EMBEDDED_NAMES: frozenset[str] = frozenset(
+    {
+        "_apply_device_settings",
+        "_apply_directory_overrides",
+        "_bootstrap_import",
+        "_discover_comfyui_cli_options",
+        "_filter_comfyui_args",
+        "_find_file",
+        "_find_from_extension_location",
+        "_get_base_option",
+        "_init_extra_nodes",
+        "_is_comfyui_directory",
+        "_load_custom_node_modules",
+        "_load_module",
+        "_load_module_temp",
+        "_parse_parser_actions",
+        "add_comfyui_directory_to_sys_path",
+        "add_extra_model_paths",
+        "bootstrap_comfyui_runtime",
+        "cleanup_comfyui_runtime",
+        "find_path",
+        "get_comfyui_path",
+        "get_node_class_mappings",
+        "get_value_at_index",
+        "import_custom_nodes",
+    }
+)
 
 
 def _strip_imports(source: str) -> str:
@@ -97,6 +124,22 @@ def get_embedded_helpers() -> str:
         parts.append(_strip_imports(filepath.read_text()))
 
     return "\n".join(parts)
+
+
+def verify_embedded_surface_matches_manifest() -> list[str]:
+    """Return embedded helper names that differ from the approved surface."""
+    actual = list_embedded_names()
+    differences = [
+        *(
+            f"missing approved embedded name: {name}"
+            for name in sorted(APPROVED_EMBEDDED_NAMES - actual)
+        ),
+        *(
+            f"unexpected embedded name: {name}"
+            for name in sorted(actual - APPROVED_EMBEDDED_NAMES)
+        ),
+    ]
+    return differences
 
 
 def list_embedded_names() -> set[str]:
@@ -194,7 +237,8 @@ def verify_no_missing_cross_calls() -> list[str]:
                     is_nested = _is_nested_or_local_def(filepath, caller_name)
                     if not is_nested:
                         unresolved.append(
-                            f"{rel_path}: calls '{caller_name}' (not embedded, not builtin)"
+                            f"{rel_path}: calls '{caller_name}' "
+                            "(not embedded, not builtin)"
                         )
 
     return unresolved

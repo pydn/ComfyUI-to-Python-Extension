@@ -165,17 +165,19 @@ def bootstrap_comfyui_runtime() -> None:
     # argparse crashes when bootstrap runs inside a subprocess (e.g. test
     # runner) where sys.argv contains non-ComfyUI arguments.
     original_argv = sys.argv
-    sys.argv = _filter_comfyui_args(sys.argv)
+    try:
+        sys.argv = _filter_comfyui_args(sys.argv)
 
-    # Load via _bootstrap_import() for namespace-package-safe imports.
-    options_mod = _bootstrap_import("comfy.options")
-    if options_mod is not None:
-        options_mod.enable_args_parsing()
+        # Load via _bootstrap_import() for namespace-package-safe imports.
+        options_mod = _bootstrap_import("comfy.options")
+        if options_mod is not None:
+            options_mod.enable_args_parsing()
 
-    cli_args_mod = _bootstrap_import("comfy.cli_args")
+        cli_args_mod = _bootstrap_import("comfy.cli_args")
+    finally:
+        # Restore original argv so downstream and error paths see real inputs.
+        sys.argv = original_argv
 
-    # Restore original argv so that downstream code sees what was actually passed
-    sys.argv = original_argv
     args = getattr(cli_args_mod, "args", None) if cli_args_mod else None
 
     if os.name == "nt":

@@ -16,19 +16,23 @@ class WorkflowRenderer:
     """Render a generation plan into the final standalone Python source."""
 
     def render(self, plan: GenerationPlan) -> str:
-        workflow_literal = self.format_python_literal(plan.workflow_data)
-        if plan.metadata_workflow_data is None:
-            extra_pnginfo_literal = "None"
-        else:
-            extra_pnginfo_literal = self.format_python_literal(
-                {"workflow": plan.metadata_workflow_data}
-            )
+        final_code = "\n".join(
+            self._build_static_imports(plan)
+            + [""]
+            + self._build_workflow_section(plan)
+            + [""]
+            + self._build_execution_section(plan)
+            + [""]
+            + self._build_entrypoint_section()
+        )
+        return black.format_str(final_code, mode=black.Mode())
 
+    def _build_static_imports(self, plan: GenerationPlan) -> list[str]:
+        """Build imports and embedded helper definitions for standalone scripts."""
         # Auto-discover all helpers from contributing runtime modules.
         # Reads source files, strips imports, embeds definitions — so internal
         # cross-calls always resolve (no NameError from missing __all__ entries).
         embedded_helpers = get_embedded_helpers()
-
         static_imports = [
             "# Imports",
             "import gc",
@@ -42,20 +46,22 @@ class WorkflowRenderer:
             "from typing import Sequence, Mapping, Any, Union",
             "",
             "log = logging.getLogger(__name__)",
-        ] + [embedded_helpers]
-
+            embedded_helpers,
+        ]
         if plan.custom_nodes:
             static_imports.append(f"\n{inspect.getsource(import_custom_nodes)}\n")
-            custom_nodes_call = "import_custom_nodes()"
+        return static_imports
+
+    def _build_workflow_section(self, plan: GenerationPlan) -> list[str]:
+        """Build workflow and PNG metadata literals."""
+        workflow_literal = self.format_python_literal(plan.workflow_data)
+        if plan.metadata_workflow_data is None:
+            extra_pnginfo_literal = "None"
         else:
-            custom_nodes_call = None
-
-        imports_code = []
-        for module_name in sorted(plan.import_statements.keys()):
-            class_names = ", ".join(sorted(plan.import_statements[module_name]))
-            imports_code.append(f"from {module_name} import {class_names}")
-
-        workflow_section = [
+            extra_pnginfo_literal = self.format_python_literal(
+                {"workflow": plan.metadata_workflow_data}
+            )
+        return [
             "# Workflow data",
             "def build_workflow() -> dict[str, Any]:",
             f"    return {workflow_literal}",
@@ -68,17 +74,22 @@ class WorkflowRenderer:
             "extra_pnginfo = build_extra_pnginfo()",
         ]
 
+    def _build_execution_section(self, plan: GenerationPlan) -> list[str]:
+        """Build the bootstrap, import, loop, and cleanup body."""
         execution_section = [
             "# Workflow execution",
             "def main(unload_models: bool | None = None):",
             "    bootstrap_comfyui_runtime()",
             "    add_extra_model_paths()",
         ]
-        if custom_nodes_call:
-            execution_section.append(f"    {custom_nodes_call}")
+        if plan.custom_nodes:
+            execution_section.append("    import_custom_nodes()")
+
+        imports_code = self._build_imports_code(plan)
         if imports_code:
             execution_section.extend(["", "    # Node imports"])
             execution_section.extend(f"    {line}" for line in imports_code)
+
         execution_section.extend(
             [
                 "",
@@ -105,23 +116,25 @@ class WorkflowRenderer:
                 "        cleanup_comfyui_runtime(unload_models=unload_models)",
             ]
         )
+        return execution_section
 
-        entrypoint_section = [
+    @staticmethod
+    def _build_imports_code(plan: GenerationPlan) -> list[str]:
+        """Build sorted node import statements for the main function."""
+        imports_code = []
+        for module_name in sorted(plan.import_statements.keys()):
+            class_names = ", ".join(sorted(plan.import_statements[module_name]))
+            imports_code.append(f"from {module_name} import {class_names}")
+        return imports_code
+
+    @staticmethod
+    def _build_entrypoint_section() -> list[str]:
+        """Build the standalone script entrypoint."""
+        return [
             "# Entrypoint",
             'if __name__ == "__main__":',
             "    main()",
         ]
-
-        final_code = "\n".join(
-            static_imports
-            + [""]
-            + workflow_section
-            + [""]
-            + execution_section
-            + [""]
-            + entrypoint_section
-        )
-        return black.format_str(final_code, mode=black.Mode())
 
     @staticmethod
     def format_python_literal(value: Any) -> str:
