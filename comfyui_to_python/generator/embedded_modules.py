@@ -2,8 +2,8 @@
 
 Instead of manually curating a __all__ list per function (which breaks when
 new internal helpers are added), this module reads contributing source files,
-strips their import statements via AST, and returns the clean definitions
-ready for embedding in generated standalone scripts.
+strips their import statements and duplicate module logger setup via AST, and
+returns the clean definitions ready for embedding in generated standalone scripts.
 
 This guarantees that ALL functions, classes, and constants from the
 contributing modules are embedded together — so internal cross-calls always
@@ -55,11 +55,11 @@ APPROVED_EMBEDDED_NAMES: frozenset[str] = frozenset(
 
 
 def _strip_imports(source: str) -> str:
-    """Remove all top-level import statements from Python source code.
+    """Remove non-embeddable top-level statements from Python source code.
 
-    Uses AST to find import nodes and rebuilds the source with those lines
-    removed while preserving everything else (functions, classes, constants,
-    docstrings, comments).
+    Uses AST to find import nodes and module logger assignments, then rebuilds
+    the source with those lines removed while preserving everything else
+    (functions, classes, constants, docstrings, comments).
 
     Args:
         source: Full Python source code of a module.
@@ -70,10 +70,13 @@ def _strip_imports(source: str) -> str:
     tree = ast.parse(source)
     lines = source.splitlines(keepends=True)
 
-    # Collect line numbers (1-indexed) of top-level imports to remove
+    # Collect line numbers (1-indexed) of top-level statements to remove.
     skip_lines: set[int] = set()
     for node in ast.iter_child_nodes(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if isinstance(node, (ast.Import, ast.ImportFrom)) or (
+            isinstance(node, (ast.Assign, ast.AnnAssign))
+            and _is_module_logger_assignment(node)
+        ):
             # Handle multi-line imports (from x import (a,\n    b))
             start = node.lineno or 1
             end = getattr(node, "end_lineno", start) or start
@@ -96,6 +99,30 @@ def _strip_imports(source: str) -> str:
         result_lines.append(line)
 
     return "".join(result_lines).strip() + "\n"
+
+
+def _is_module_logger_assignment(node: ast.Assign | ast.AnnAssign) -> bool:
+    """Return True when a top-level assignment only initializes `log`."""
+    if isinstance(node, ast.Assign):
+        targets = node.targets
+        value = node.value
+    else:
+        targets = [node.target]
+        value = node.value
+
+    if value is None:
+        return False
+    if not targets or any(
+        not isinstance(target, ast.Name) or target.id != "log" for target in targets
+    ):
+        return False
+    return (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Attribute)
+        and value.func.attr == "getLogger"
+        and isinstance(value.func.value, ast.Name)
+        and value.func.value.id == "logging"
+    )
 
 
 def get_embedded_helpers() -> str:

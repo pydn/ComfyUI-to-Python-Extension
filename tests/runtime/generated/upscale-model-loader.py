@@ -24,8 +24,6 @@ All modules loaded here are considered trusted — the caller must ensure
 the file paths and module names come from verified sources.
 """
 
-log = logging.getLogger(__name__)
-
 
 def _load_module(module_name: str, filepath: str) -> Any:
     """Load a Python module from an explicit file path, bypassing sys.path.
@@ -137,8 +135,6 @@ variable or filesystem contents come from a verified source. This module
 verifies structural markers (nodes.py, main.py, comfy/) but does NOT
 verify content integrity of those files.
 """
-
-log = logging.getLogger(__name__)
 
 
 def _is_comfyui_directory(path: str) -> bool:
@@ -279,8 +275,6 @@ bootstrap_comfyui_runtime() function. Keeping them separate clarifies
 the distinction between data analysis (this module) and runtime execution
 (node_runtime.py).
 """
-
-log = logging.getLogger(__name__)
 
 
 # Cache for discovered CLI options — populated once, reused thereafter.
@@ -491,8 +485,6 @@ Internal (prefixed with _): Available for embedding in generated scripts.
 # ── Re-exports from runtime/bootstrap.py ────────────────────────────────────
 # ── Re-exports from runtime/module_loader.py ────────────────────────────────
 # ── Re-exports from runtime/path_discovery.py ────────────────────────────────
-log = logging.getLogger(__name__)
-
 
 # ── Public API ────────────────────────────────────────────────────────────────
 # Re-exported names for import from this module.

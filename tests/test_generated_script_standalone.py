@@ -109,6 +109,30 @@ class TestGeneratedScriptNoRelativeImports(unittest.TestCase):
             f"Generated script contains relative imports: {relative_imports}",
         )
 
+    def test_rendered_script_defines_logger_once(self):
+        """A rendered script must define the module logger exactly once."""
+        from comfyui_to_python.generator.render import WorkflowRenderer
+        from comfyui_to_python.generator.model import GenerationPlan
+
+        plan = GenerationPlan(
+            workflow_data={
+                "1": {"class_type": "CheckpointLoaderSimple", "inputs": {}},
+            },
+            metadata_workflow_data=None,
+            custom_nodes=False,
+            import_statements={},
+            special_functions_code=[],
+            loop_code=["result = some_node()"],
+            queue_size=1,
+        )
+
+        generated = WorkflowRenderer().render(plan)
+        logger_assignments = re.findall(
+            r"^log = logging\.getLogger\(__name__\)$", generated, re.MULTILINE
+        )
+
+        self.assertEqual(logger_assignments, ["log = logging.getLogger(__name__)"])
+
     def test_rendered_script_compiles_as_standalone(self):
         """A rendered script must compile without ImportError as standalone code.
 
