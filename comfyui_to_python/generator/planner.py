@@ -74,38 +74,59 @@ class WorkflowPlanner:
                     custom_nodes = True
                 special_functions_code.append(class_code)
 
-            class_def_params = self.get_function_parameters(
-                getattr(class_def, class_def.FUNCTION)
-            )
-            no_params = class_def_params is None
+            is_v3_node = self.is_v3_node(class_def)
 
-            inputs = {
-                key: value
-                for key, value in inputs.items()
-                if no_params or key in class_def_params
-            }
+            if is_v3_node:
+                # v3 (comfy_api.io.ComfyNode) nodes run through EXECUTE_NORMALIZED, which forwards **kwargs verbatim: there is no stable signature to filter inputs against, and hidden inputs are not execute() kwargs at all — the executor injects them via PREPARE_CLASS_CLONE.
+                func_name = getattr(class_def, "FUNCTION", "EXECUTE_NORMALIZED")
+                if func_name == "EXECUTE_NORMALIZED_ASYNC":
+                    raise ValueError(
+                        f"Node '{class_type}' (id {idx}) uses an async v3 execute() "
+                        "(EXECUTE_NORMALIZED_ASYNC); the generated script is synchronous."
+                    )
+                # Do not mutate the workflow data: build_workflow() renders it verbatim.
+                inputs = dict(inputs)
 
-            hidden_inputs = input_types.get("hidden", {})
-            if (
-                "unique_id" in hidden_inputs
-                and (no_params or "unique_id" in class_def_params)
-            ):
-                inputs["unique_id"] = random.randint(1, 2**64)
-            if "prompt" in hidden_inputs and (no_params or "prompt" in class_def_params):
-                inputs["prompt"] = {"variable_name": "prompt"}
-            if "extra_pnginfo" in hidden_inputs and (
-                no_params or "extra_pnginfo" in class_def_params
-            ):
-                inputs["extra_pnginfo"] = {"variable_name": "extra_pnginfo"}
-            if "hidden" not in input_types and class_def_params is not None:
-                if "unique_id" in class_def_params:
+            else:
+                class_def_params = self.get_function_parameters(
+                    getattr(class_def, class_def.FUNCTION)
+                )
+                no_params = class_def_params is None
+
+                inputs = {
+                    key: value
+                    for key, value in inputs.items()
+                    if no_params or key in class_def_params
+                }
+
+                hidden_inputs = input_types.get("hidden", {})
+                if (
+                    "unique_id" in hidden_inputs
+                    and (no_params or "unique_id" in class_def_params)
+                ):
                     inputs["unique_id"] = random.randint(1, 2**64)
+                if "prompt" in hidden_inputs and (no_params or "prompt" in class_def_params):
+                    inputs["prompt"] = {"variable_name": "prompt"}
+                if "extra_pnginfo" in hidden_inputs and (
+                    no_params or "extra_pnginfo" in class_def_params
+                ):
+                    inputs["extra_pnginfo"] = {"variable_name": "extra_pnginfo"}
+                if "hidden" not in input_types and class_def_params is not None:
+                    if "unique_id" in class_def_params:
+                        inputs["unique_id"] = random.randint(1, 2**64)
 
             executed_variables[idx] = (
                 f"{self.clean_variable_name(class_type)}_"
                 f"{self.sanitize_node_id(str(idx))}"
             )
             inputs = self.update_inputs(inputs, executed_variables)
+
+            v3_hidden_inputs: str | None = None
+            if is_v3_node:
+                inputs, v3_hidden_inputs = self.prepare_v3_node_call(
+                    class_type, class_def, inputs, input_types.get("hidden", {}) or {}
+                )
+
             seed_sync_code = self.create_prompt_seed_sync_code(
                 idx, inputs, input_value_types, is_special_function
             )
@@ -120,6 +141,7 @@ class WorkflowPlanner:
                     executed_variables[idx],
                     is_special_function,
                     input_value_types=input_value_types,
+                    v3_hidden_inputs=v3_hidden_inputs,
                     **inputs,
                 )
             )
@@ -141,13 +163,19 @@ class WorkflowPlanner:
         variable_name: str,
         is_special_function: bool,
         input_value_types: dict[str, str] | None = None,
+        v3_hidden_inputs: str | None = None,  # PREPARE_CLASS_CLONE payload body; None for v1 nodes
         **kwargs,
     ) -> str:
         args = ", ".join(
             self.format_arg(key, value, (input_value_types or {}).get(key))
             for key, value in kwargs.items()
         )
-        code = f"{variable_name} = {obj_name}.{func}({args})\n"
+        if v3_hidden_inputs is not None:
+            # The executor prepares a shallow class clone per v3 node so hidden inputs are reachable via cls.hidden; mirror that here. HiddenHolder resolves any omitted key (e.g. UNIQUE_ID in a headless script) to None.
+            receiver = f"type({obj_name}).PREPARE_CLASS_CLONE({{{v3_hidden_inputs}}}).{func}"
+        else:
+            receiver = f"{obj_name}.{func}"
+        code = f"{variable_name} = {receiver}({args})\n"
         if not is_special_function:
             code = f"\t{code}"
         return code
@@ -194,6 +222,27 @@ class WorkflowPlanner:
             return value["variable_name"]
         if key == "noise_seed" or key == "seed":
             return WorkflowPlanner.get_randomized_seed_code(input_value_type)
+        if isinstance(value, str):
+            return json.dumps(value)
+        if isinstance(value, (list, dict)):  # folded v3 dynamic input or DICT-widget value derived from the prompt
+            return WorkflowPlanner.format_structured_value(value)
+        return repr(value)
+
+    @staticmethod
+    def format_structured_value(value: Any) -> str:
+        """Render a prompt-derived literal (str/int/float/bool/None/list/dict) as Python source."""
+        if isinstance(value, dict):
+            if len(value) == 1 and "variable_name" in value:  # resolved link placeholder from update_inputs()
+                return value["variable_name"]
+            items = ", ".join(
+                f"{json.dumps(item_key)}: {WorkflowPlanner.format_structured_value(item_value)}"
+                for item_key, item_value in value.items()
+            )
+            return f"{{{items}}}"
+        if isinstance(value, list):
+            return (
+                "[" + ", ".join(WorkflowPlanner.format_structured_value(item) for item in value) + "]"
+            )
         if isinstance(value, str):
             return json.dumps(value)
         return repr(value)
@@ -248,6 +297,62 @@ class WorkflowPlanner:
             for param in signature.parameters.values()
         )
         return list(parameters.keys()) if not catch_all else None
+
+    @staticmethod
+    def is_v3_node(class_def: Any) -> bool:
+        """Detect v3 nodes (comfy_api.io.ComfyNode) via their normalized execution entry points."""
+        function = getattr(class_def, "FUNCTION", None)
+        return function in ("EXECUTE_NORMALIZED", "EXECUTE_NORMALIZED_ASYNC") or hasattr(
+            class_def, "EXECUTE_NORMALIZED"
+        )
+
+    def prepare_v3_node_call(
+        self, class_type: str, class_def: Any, inputs: dict, declared_hidden: dict
+    ) -> tuple[dict[str, Any], str]:
+        """Prepare v3 node inputs the same way ``comfy_execution.get_input_data`` does.
+
+        - ``get_finalized_class_inputs`` expands dynamic schema entries (e.g. DynamicCombo)
+          against the live prompt keys, producing the dotted ids like
+          ``"resize_type"`` / ``"resize_type.shorter_size"`` plus their fold paths.
+        - ``build_nested_inputs`` folds those dotted prompt keys into the single nested-dict
+          kwarg that v3 ``execute()`` actually receives, e.g.
+          ``resize_type={"resize_type": "scale shorter dimension", "shorter_size": 1080}``.
+        - Hidden inputs are carried in the PREPARE_CLASS_CLONE payload instead of kwargs.
+          UNIQUE_ID and DYNPROMPT are intentionally omitted: a headless script has no server
+          context, so they resolve to None (e.g. skips progress-text paths).
+        """
+        try:
+            from comfy_api.latest import _io as comfy_io
+        except ImportError as exc:  # pragma: no cover - v3 schema expansion needs a ComfyUI runtime on sys.path
+            raise RuntimeError(
+                f"Node '{class_type}' is a v3 (comfy_api.io.ComfyNode) node; its inputs "
+                "can only be converted while running inside a ComfyUI installation."
+            ) from exc
+
+        valid_inputs = class_def.INPUT_TYPES()
+        finalized, _hidden, v3_data = comfy_io.get_finalized_class_inputs(
+            valid_inputs, inputs
+        )
+
+        known_keys = (
+            set(finalized.get("required", {})) | set(finalized.get("optional", {}))
+        )
+        accept_all_inputs = bool(getattr(class_def, "ACCEPT_ALL_INPUTS", False))
+
+        folded = comfy_io.build_nested_inputs(dict(inputs), v3_data)
+        result: dict[str, Any] = {}
+        for key, value in folded.items():
+            # Drop stale dotted keys (e.g. option inputs of an unselected DynamicCombo): the executor never receives them either.
+            if accept_all_inputs or key in known_keys:
+                result[key] = value
+
+        hidden_parts: list[str] = []
+        if "prompt" in declared_hidden:
+            hidden_parts.append('"PROMPT": prompt')
+        if "extra_pnginfo" in declared_hidden:
+            hidden_parts.append('"EXTRA_PNGINFO": extra_pnginfo')
+
+        return result, ", ".join(hidden_parts)
 
     def update_inputs(self, inputs: dict, executed_variables: dict) -> dict:
         for key in inputs.keys():

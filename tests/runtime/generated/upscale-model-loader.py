@@ -109,6 +109,19 @@ def cleanup_comfyui_runtime(unload_models: bool | None = None) -> None:
     """Best-effort cleanup for embedded or repeated generated-script execution."""
     import gc
 
+    def run_cleanup_hook(name: str, should_run: bool = True) -> None:
+        if not should_run or not hasattr(model_management, name):
+            return
+        cleanup_fn = getattr(model_management, name)
+        try:
+            cleanup_fn()
+        except Exception as exc:
+            warnings.warn(
+                f"ComfyUI cleanup hook {name} failed during teardown: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
     should_unload = unload_models
     if should_unload is None:
         should_unload = os.environ.get(
@@ -126,12 +139,9 @@ def cleanup_comfyui_runtime(unload_models: bool | None = None) -> None:
         gc.collect()
         return
 
-    if hasattr(model_management, "cleanup_models_gc"):
-        model_management.cleanup_models_gc()
-    if should_unload and hasattr(model_management, "unload_all_models"):
-        model_management.unload_all_models()
-    if hasattr(model_management, "soft_empty_cache"):
-        model_management.soft_empty_cache()
+    run_cleanup_hook("cleanup_models_gc")
+    run_cleanup_hook("unload_all_models", should_run=should_unload)
+    run_cleanup_hook("soft_empty_cache")
     gc.collect()
 
 
@@ -205,15 +215,21 @@ def main(unload_models: bool | None = None):
             loadimage = LoadImage()
             loadimage_1 = loadimage.load_image(image="e2e_upscale_input.png")
             upscalemodelloader = NODE_CLASS_MAPPINGS["UpscaleModelLoader"]()
-            upscalemodelloader_2 = upscalemodelloader.EXECUTE_NORMALIZED(
-                model_name="RealESRGAN_x4plus.safetensors"
+            upscalemodelloader_2 = (
+                type(upscalemodelloader)
+                .PREPARE_CLASS_CLONE({})
+                .EXECUTE_NORMALIZED(model_name="RealESRGAN_x4plus.safetensors")
             )
             imageupscalewithmodel = NODE_CLASS_MAPPINGS["ImageUpscaleWithModel"]()
             saveimage = SaveImage()
             for q in range(1):
-                imageupscalewithmodel_3 = imageupscalewithmodel.EXECUTE_NORMALIZED(
-                    upscale_model=get_value_at_index(upscalemodelloader_2, 0),
-                    image=get_value_at_index(loadimage_1, 0),
+                imageupscalewithmodel_3 = (
+                    type(imageupscalewithmodel)
+                    .PREPARE_CLASS_CLONE({})
+                    .EXECUTE_NORMALIZED(
+                        upscale_model=get_value_at_index(upscalemodelloader_2, 0),
+                        image=get_value_at_index(loadimage_1, 0),
+                    )
                 )
                 saveimage_4 = saveimage.save_images(
                     filename_prefix="E2E_upscale_model_loader",
